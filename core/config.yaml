@@ -1,0 +1,47 @@
+serialport:
+    enable_uart: True
+    baudrate: 115200
+    bluetooth: False # If True and enable_uart is True, bluetooth will assigned to mini-UART
+    console: # If True, the console will be enabled on the serial port during startup
+        ask: true
+        type: boolean
+        default: false
+        prompt: "Enable serial console on boot [true|yes or false|no]? "
+
+bash_util:
+    apps: # List of extra apps to install
+        - pydf
+        - avahi-utils
+        - tio
+        - htop
+        - git
+        - i2c-tools
+        - screen
+        - curl
+        - wget
+        - zip
+        - perl
+        - rsync
+        - arp-scan
+        - nmap
+        - lsof
+        - net-tools
+    tools:
+        - cdargs
+        - aliases
+        - commander
+
+rtc:
+    device: mcp7941x  # RTC device, e.g. ds1307, ds3231, pcf8523, mcp7941x
+    addr: null        # I2C address for RTC, e.g. 0x68 for ds1307, ds3231; 0x51 for pcf8523; null for mcp7941x
+    sdapin: 22          # SDA pin for RTC
+    sclpin: 23          # SCL pin for RTC
+    #setup_chrony: True  # If True, install and configure chrony for time
+
+# splashscreen:
+#     imagefile: /home/foo/splash.png  # Path to the splash screen image file
+
+# network:
+#     wifi_ssid: Ask
+#     wifi_password: Ask
+#     dhcp: True

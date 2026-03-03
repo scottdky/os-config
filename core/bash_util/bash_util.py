@@ -3,13 +3,17 @@
 Pure Python implementation using paramiko instead of Fabric
 """
 import os
+import sys
 import paramiko
 from pathlib import Path
 
-from cmd_manager import SSHManager
+# Ensure project root is in sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
+
+from lib.cmd_manager import interactive_create_manager
 
 # Updated bash.py implementation
-BASEPATH = os.path.dirname(os.path.abspath(__file__))
+BASEPATH = os.path.dirname(os.path.abspath(__file__)) # PROJECT_ROOT/core
 
 def reload_aliases(ssh):
     ssh.put(os.path.join(BASEPATH, 'bash_aliases.txt'), '.bash_aliascore')
@@ -45,18 +49,24 @@ def reload(ssh):
 
 
 if __name__ == "__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description='Bash setup script')
-    parser.add_argument('host', help='SSH host')
-    parser.add_argument('command', choices=['install', 'reload', 'install_aliases',
-                                            'install_cdargs', 'reload_aliases', 'reload_cdargs'])
-    parser.add_argument('-u', '--user', help='SSH username')
-    parser.add_argument('-k', '--key', help='SSH key file path')
-    args = parser.parse_args()
+    from lib.cmd_manager import interactive_create_manager
+    with interactive_create_manager() as mgr:
+        res, _, _ = mgr.run('hostname')
+        print(f"Connected to: {res.strip()}")
 
-    # Execute command
-    with SSHManager(args.host, userName=args.user, keyFilename=args.key) as ssh:
-        globals()[args.command](ssh)
+    # import argparse
+
+    # parser = argparse.ArgumentParser(description='Bash setup script')
+    # parser.add_argument('host', help='SSH host')
+    # parser.add_argument('command', choices=['install', 'reload', 'install_aliases',
+    #                                         'install_cdargs', 'reload_aliases', 'reload_cdargs'])
+    # parser.add_argument('-u', '--user', help='SSH username')
+    # parser.add_argument('-k', '--key', help='SSH key file path')
+    # args = parser.parse_args()
+
+    # # Execute command
+    # with SSHManager(args.host, userName=args.user, keyFilename=args.key) as ssh:
+    #     globals()[args.command](ssh)
 
     print("Done!")

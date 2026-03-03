@@ -1,0 +1,10 @@
+plugins:
+  - /path/to/my/plugin
+
+install:
+  - bash_util
+
+bash_util:
+    tools:
+        - cdargs
+        - aliases

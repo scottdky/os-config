@@ -1,18 +1,27 @@
 # Migration Guide: Fabric 1.x to cmd_manager
 
-This guide helps you migrate from Fabric 1.x to the new `cmd_manager` multi-location OS manager.
+This guide helps migrate Fabric-style workflows to the current `cmd_manager` API.
+
+## Current Supported Modes
+
+`create_manager()` supports these modes:
+
+- `local`
+- `ssh`
+- `image`
+- `sdcard`
+
+The old `chroot` mode is no longer supported.
 
 ## Key Differences
 
 ### Fabric 1.x Pattern
 ```python
-from fabric.api import run, sudo, put, settings, env
+from fabric.api import run, sudo, put, env
 
-# Set target host
 env.host_string = 'user@hostname'
 env.key_filename = '/path/to/key'
 
-# Execute commands
 run('ls -la')
 sudo('apt-get update')
 put('/local/file', '/remote/file')
@@ -20,143 +29,86 @@ put('/local/file', '/remote/file')
 
 ### cmd_manager Pattern
 ```python
-from cmd_manager import create_manager
+from lib.cmd_manager import create_manager
 
-# Create manager for target
-with create_manager('ssh', hostName='hostname', userName='user',
-                    keyFilename='/path/to/key') as mgr:
+with create_manager(
+    'ssh',
+    hostName='hostname',
+    userName='user',
+    keyFilename='/path/to/key'
+) as mgr:
     mgr.run('ls -la')
     mgr.run('apt-get update', sudo=True)
     mgr.put('/local/file', '/remote/file')
 ```
 
-## Location Selection
+## Mode Selection Migration
 
-### Old Fabric Way (with fsutils.py pattern)
+### Before
 ```python
-from fabric.api import env, run, sudo
-
-# User selects location by setting env.host_string
 if location == 'local':
     env.host_string = 'localhost'
 elif location == 'remote':
     env.host_string = 'pi@192.168.1.100'
 elif location == 'chroot':
-    env.host_string = 'localhost'  # Then use runAsChroot()
-
-# Different code paths for different locations
-if location == 'chroot':
+    mountImage('/path/to/raspi.img')
     runAsChroot('apt-get update')
-else:
-    sudo('apt-get update')
 ```
 
-### New cmd_manager Way
+### After
 ```python
-from cmd_manager import create_manager
+from lib.cmd_manager import create_manager
 
-# User selects location by choosing mode
 if location == 'local':
     mgr = create_manager('local')
-elif location == 'remote':
+elif location == 'ssh':
     mgr = create_manager('ssh', hostName='192.168.1.100', userName='pi')
-elif location == 'chroot':
-    mgr = create_manager('chroot', mount_path='/mnt/image')
+elif location == 'image':
+    mgr = create_manager('image', imagePath='/path/to/raspi.img')
+elif location == 'sdcard':
+    mgr = create_manager('sdcard', devicePath='/dev/sdb')
+else:
+    raise ValueError(f'Unsupported location: {location}')
 
-# Same code for all locations!
-mgr.run('apt-get update', sudo=True)
-mgr.close()  # or use with context manager
+with mgr:
+    mgr.run('apt-get update', sudo=True)
 ```
 
 ## Complete Migration Example
 
-### Before (Fabric 1.x with fsutils.py)
 ```python
-from fabric.api import run, sudo, put, env
-from fsutils import runAsChroot, mountImage, unmountImage
+from lib.cmd_manager import create_manager
 
-def setup_system(image_location, target):
-    """
-    Setup system on local, remote, or mounted image.
-    target: 'local', 'remote', or 'chroot'
-    """
-    if target == 'local':
-        env.host_string = 'localhost'
-    elif target == 'remote':
-        env.host_string = 'pi@192.168.1.100'
-        env.key_filename = '/home/user/.ssh/id_rsa'
-    elif target == 'chroot':
-        env.host_string = 'localhost'
-        mountImage(image_location)
 
-    # Different execution paths
-    if target == 'chroot':
-        runAsChroot('apt-get update')
-        runAsChroot('apt-get install -y vim')
-        # File operations need different handling
-        put('/local/bashrc', '/mnt/image/root/.bashrc')
-    else:
-        sudo('apt-get update')
-        sudo('apt-get install -y vim')
-        put('/local/bashrc', '/root/.bashrc', use_sudo=True)
-
-    if target == 'chroot':
-        unmountImage()
-```
-
-### After (cmd_manager)
-```python
-from cmd_manager import create_manager
-
-def setup_system(image_location, target, remote_host=None):
-    """
-    Setup system on local, remote, or mounted image.
-    target: 'local', 'ssh', or 'chroot'
-    """
-    # Create appropriate manager
+def setup_system(target: str, remoteHost: str | None = None,
+                 imagePath: str | None = None, devicePath: str | None = None) -> None:
     if target == 'local':
         mgr = create_manager('local')
     elif target == 'ssh':
-        mgr = create_manager('ssh', hostName=remote_host or '192.168.1.100',
-                           userName='pi', keyFilename='/home/user/.ssh/id_rsa')
-    elif target == 'chroot':
-        # Assumes image already mounted at /mnt/image
-        mgr = create_manager('chroot', mountPath='/mnt/image')
+        mgr = create_manager(
+            'ssh',
+            hostName=remoteHost or '192.168.1.100',
+            userName='pi',
+            keyFilename='/home/user/.ssh/id_rsa'
+        )
+    elif target == 'image':
+        if not imagePath:
+            raise ValueError('imagePath required for image target')
+        mgr = create_manager('image', imagePath=imagePath)
+    elif target == 'sdcard':
+        if not devicePath:
+            raise ValueError('devicePath required for sdcard target')
+        mgr = create_manager('sdcard', devicePath=devicePath)
+    else:
+        raise ValueError(f'Unknown target: {target}')
 
     with mgr:
-        # Same code for all targets!
         mgr.run('apt-get update', sudo=True)
         mgr.run('apt-get install -y vim', sudo=True)
         mgr.put('/local/bashrc', '/root/.bashrc', sudo=True)
 ```
 
-## Function Parameter Migration
-
-### Accepting Manager Instead of Using Global env
-
-**Before:**
-```python
-from fabric.api import run, sudo, put
-
-def install_packages():
-    """Install packages on whatever host is set in env"""
-    sudo('apt-get update')
-    sudo('apt-get install -y vim htop')
-```
-
-**After:**
-```python
-def install_packages(mgr):
-    """Install packages using provided manager"""
-    mgr.run('apt-get update', sudo=True)
-    mgr.run('apt-get install -y vim htop', sudo=True)
-
-# Usage:
-with create_manager('local') as mgr:
-    install_packages(mgr)
-```
-
-## Common Fabric Functions Mapping
+## Fabric Function Mapping
 
 | Fabric 1.x | cmd_manager |
 |------------|-------------|
@@ -164,160 +116,66 @@ with create_manager('local') as mgr:
 | `sudo('command')` | `mgr.run('command', sudo=True)` |
 | `put('/local', '/remote')` | `mgr.put('/local', '/remote')` |
 | `put('/local', '/remote', use_sudo=True)` | `mgr.put('/local', '/remote', sudo=True)` |
-| `append('/file', 'text')` | `mgr.append('/file', 'text')` |
 | `exists('/path')` | `mgr.exists('/path')` |
 
-## Chroot-Specific Migration
+## Image and SD Card Usage
 
-### Before (fsutils.py pattern)
+### Image file workflow
 ```python
-from fabric.api import env, run
-from fsutils import mountImage, unmountImage, runAsChroot
+from lib.cmd_manager import create_manager
 
-# Mount the image
-mountImage('/path/to/raspi.img')
-
-# Execute commands
-runAsChroot('apt-get update')
-runAsChroot('uname -a')
-
-# File operations on mounted filesystem
-put('/local/file', '/mnt/image/etc/config')
-
-# Cleanup
-unmountImage()
-```
-
-### After (cmd_manager with auto-mount)
-```python
-from cmd_manager import create_manager
-
-# Auto-mount handles everything!
-with create_manager('chroot', autoMount=True,
-                   imagePath='/path/to/raspi.img') as mgr:
+with create_manager('image', imagePath='/path/to/raspios.img') as mgr:
     mgr.run('apt-get update', sudo=True)
     mgr.run('uname -a')
-
-    # File operations work transparently
-    mgr.put('/local/file', '/etc/config')  # Automatically goes to /mnt/image/etc/config
-
-# Auto-unmount happens automatically
-
+    mgr.put('/local/file', '/etc/config')
 ```
 
-### After (cmd_manager - manual mount, legacy)
+### SD card workflow
 ```python
-from cmd_manager import create_manager
+from lib.cmd_manager import create_manager
 
-# Assumes image already mounted at /mnt/image
-# (Use your existing mount scripts separately)
-
-with create_manager('chroot', mountPath='/mnt/image') as mgr:
-    mgr.run('apt-get update', sudo=True)
-    mgr.run('uname -a')
-
-    # File operations work transparently
-    mgr.put('/local/file', '/etc/config')  # Automatically goes to /mnt/image/etc/config
-
-# Unmount separately if needed
-```
-
-## Auto-Mount Features (New in cmd_manager)
-
-### Image File Auto-Mount
-```python
-# Automatically mount, work, and unmount a Raspberry Pi image
-with create_manager('chroot', autoMount=True,
-                   imagePath='/path/to/raspios.img') as mgr:
-    mgr.run('apt-get update', sudo=True)
-    mgr.run('apt-get install -y vim', sudo=True)
-# Image is automatically unmounted here
-```
-
-### SD Card Auto-Mount
-```python
-# Same interface works with SD cards (block devices)
-with create_manager('chroot', autoMount=True,
-                   imagePath='/dev/sdb') as mgr:
+with create_manager('sdcard', devicePath='/dev/sdb') as mgr:
     mgr.run('hostname')
-    mgr.append('/etc/hosts', '192.168.1.50 mydevice')
-# SD card is automatically unmounted here
+    mgr.put('/local/hosts', '/etc/hosts', sudo=True)
 ```
 
-### Development Workflow (Keep Mounted)
+### Interactive SD selection
 ```python
-# Keep image mounted between operations
-with create_manager('chroot', autoMount=True,
-                   imagePath='/path/to/raspios.img',
-                   keepMounted=True) as mgr:
-    mgr.run('apt-get update', sudo=True)
-    mgr.put('/local/config.txt', '/etc/myapp/config.txt')
-# Image stays mounted
+from lib.cmd_manager import create_manager
 
-# Continue working later (manual mount mode)
-with create_manager('chroot', mountPath='/mnt/image') as mgr:
-    mgr.run('systemctl enable myservice', sudo=True)
-# Still mounted
-
-# When completely done, unmount manually or use auto_mount without keep_mounted
+mgr = create_manager('sdcard', interactive=True)
+if mgr is not None:
+    with mgr:
+        mgr.run('hostname')
 ```
 
-### Custom Mount Path
-```python
-# Mount to a custom location
-with create_manager('chroot', auto_mount=True,
-                   image_path='/path/to/raspios.img',
-                   mount_path='/mnt/my_custom_mount') as mgr:
-    mgr.run('ls -la /')
-```
+## Mount Behavior and Parameters
 
-### Force Unmount (For Stuck Mounts)
-```python
-# Force-kill processes using the mount before unmounting
-with create_manager('chroot', auto_mount=True,
-                   image_path='/path/to/raspios.img',
-                   force_unmount=True) as mgr:
-    mgr.run('some command')
-# Will force unmount even if processes are using it
-```
+For `image` and `sdcard` managers:
 
-### Skip Mounting if Already Mounted
-```python
-# Auto-mount automatically detects if image is already mounted
-# and skips mounting - safe to call multiple times
+- mounting happens automatically on manager creation
+- existing mounts are reused when detected
+- unmount happens on `close()` / context manager exit unless `keepMounted=True`
 
-with create_manager('chroot', auto_mount=True,
-                   image_path='/path/to/raspios.img') as mgr:
-    mgr.run('first operation')
+Common parameters:
 
-# If image is still mounted from previous operation:
-with create_manager('chroot', auto_mount=True,
-                   image_path='/path/to/raspios.img') as mgr:
-    # Detects existing mount, skips mounting
-    mgr.run('second operation')
-```
+- `mountPath` (default `/mnt/image`)
+- `forceUnmount` (force cleanup on unmount)
+- `keepMounted` (skip automatic unmount)
+- `defaultChrootUser` (non-root chroot user when `sudo=False`)
 
-## Tips for Migration
+Target-specific parameters:
 
-1. **Create a wrapper function** for your location selection logic:
-   ```python
-   def get_manager(location_type, **kwargs):
-       """Central function to create managers based on your app's logic"""
-       if location_type == 'local':
-           return create_manager('local')
-       elif location_type == 'remote':
-           return create_manager('ssh', **kwargs)
-       elif location_type == 'mounted_image':
-           return create_manager('chroot', mount_path=kwargs.get('mount_path', '/mnt/image'))
-   ```
+- `image`: `imagePath='/path/to/file.img'`
+- `sdcard`: `devicePath='/dev/sdX'` or `interactive=True`
 
-2. **Update functions to accept manager parameter** instead of relying on global env
+## Migration Tips
 
-3. **Use context managers** (`with` statement) to ensure proper cleanup
-
-4. **Mount/unmount separately** for chroot - cmd_manager assumes the filesystem is already mounted
-
-5. **Test each location type** independently to ensure commands work correctly
+1. Pass manager objects into functions instead of relying on global Fabric env state.
+2. Prefer context managers (`with`) for reliable cleanup.
+3. Replace any `create_manager('chroot', ...)` calls with explicit `image` or `sdcard` mode.
+4. Keep naming consistent with live kwargs (`mountPath`, `forceUnmount`, `keepMounted`).
+5. Test each target mode (`local`, `ssh`, `image`, `sdcard`) independently after migration.
 
 ## Prerequisites
 

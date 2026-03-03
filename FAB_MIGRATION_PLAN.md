@@ -1,5 +1,8 @@
 # Fabric Migration Plan to Cmd Manager
 
+> Historical planning document. Some items reflect early migration ideas and may not match the current implementation.
+> For current usage, see `README.md` and `MIGRATION_GUIDE.md`.
+
 ## Structure
 - lib: various OS and file operations
 - core: some basic server ops
@@ -25,6 +28,6 @@ The GitLab repo will be public in order to be open source and give back. It will
 The plugin folder will be empty in this repo. They can be added in one of the following ways:
 1. **Not recommended**: Simply copy them in. "$ git clean" will delete them.
 2. Symlink to them. In plugin dir, run $ ln -s PATH_TO_PLUGINS myplugins
-3. Copy settings_example.yaml to settings.yaml and in it add the following:
+3. Copy `config_example.yaml` to your local config file and in it add the following:
    PLUGINS
    - PATH_TO_PLUGINS

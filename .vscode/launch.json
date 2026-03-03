@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Mount Step-Through",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/debug_mount_stepthrough.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
