@@ -9,7 +9,7 @@ Shows usage patterns for:
 - Mount state management
 """
 
-from lib.cmd_manager import create_manager, ImageFileManager, SDCardManager
+from lib.managers import create_manager, ImageFileManager, SDCardManager
 
 
 def demo_image_file():

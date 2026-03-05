@@ -14,7 +14,7 @@ Usage:
     python hostname.py password     # Only set password
 
     # Programmatic - single operation
-    from lib.cmd_manager import create_manager
+    from lib.managers import create_manager
     from lib.config import resolve_config_values, validate_and_prompt
     from core import hostname
 
@@ -65,7 +65,7 @@ import argparse
 # pylint: disable=wrong-import-position
 # Ensure project root is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
-from lib.cmd_manager import BaseManager, interactive_create_manager, get_user_selection
+from lib.managers import BaseManager, interactive_create_manager, get_user_selection
 from lib.config import resolve_config_values, validate_and_prompt
 # pylint: enable=wrong-import-position
 
@@ -218,11 +218,6 @@ if __name__ == '__main__':
 
     # Pre-mount resolution: determine unresolved required keys without prompting
     allConfigs, missingKeys = resolve_config_values('hostname', configsToQuery)
-
-    if missingKeys and (not sys.stdin.isatty() or not sys.stdout.isatty()):
-        missingText = ', '.join(missingKeys)
-        print(f'Cannot prompt for missing required config(s) in non-interactive mode: {missingText}')
-        sys.exit(1)
 
     # Create and execute with manager
     manager = interactive_create_manager()

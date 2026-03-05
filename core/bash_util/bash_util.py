@@ -10,7 +10,7 @@ from pathlib import Path
 # Ensure project root is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
 
-from lib.cmd_manager import interactive_create_manager
+from lib.managers import interactive_create_manager
 
 # Updated bash.py implementation
 BASEPATH = os.path.dirname(os.path.abspath(__file__)) # PROJECT_ROOT/core
@@ -50,7 +50,7 @@ def reload(ssh):
 
 if __name__ == "__main__":
 
-    from lib.cmd_manager import interactive_create_manager
+    from lib.managers import interactive_create_manager
     with interactive_create_manager() as mgr:
         res, _, _ = mgr.run('hostname')
         print(f"Connected to: {res.strip()}")

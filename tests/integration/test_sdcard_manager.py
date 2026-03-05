@@ -10,7 +10,7 @@ import subprocess
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import SDCardManager
+from lib.managers import SDCardManager
 
 
 @pytest.mark.integration

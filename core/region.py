@@ -14,7 +14,7 @@ Usage:
     python region.py timezone     # Only set timezone
 
     # Programmatic - single operation
-    from lib.cmd_manager import create_manager
+    from lib.managers import create_manager
     from lib.config import load_and_validate_config
     from core import region
 
@@ -51,7 +51,7 @@ import argparse
 # pylint: disable=wrong-import-position
 # Ensure project root is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
-from lib.cmd_manager import BaseManager, interactive_create_manager
+from lib.managers import BaseManager, interactive_create_manager
 from lib.config import load_and_validate_config
 # pylint: enable=wrong-import-position
 

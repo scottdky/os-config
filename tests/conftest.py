@@ -73,7 +73,7 @@ def realDevice(request):
     if realDeviceOpt is None:
         return None
 
-    from lib.cmd_manager import SDCardManager
+    from lib.managers import SDCardManager
 
     devices = SDCardManager.detect_usb_devices()
 

@@ -19,7 +19,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from lib.cmd_manager import SDCardManager  # pylint: disable=wrong-import-position
+from lib.managers import SDCardManager  # pylint: disable=wrong-import-position
 
 
 SAFE_MARKER_EXPRESSION = "integration and not requires_device and not requires_chroot"

@@ -11,7 +11,7 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from lib.cmd_manager import interactive_create_manager
+from lib.managers import interactive_create_manager
 from lib.config import load_and_validate_config
 from core import hostname
 

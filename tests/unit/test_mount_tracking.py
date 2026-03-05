@@ -10,7 +10,8 @@ import os
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import SDCardManager
+from lib.managers import SDCardManager
+from lib.managers.base import CommandResult
 
 
 @pytest.mark.unit
@@ -19,8 +20,9 @@ class TestMountTracking:
 
     def _create_manager(self) -> SDCardManager:
         """Create manager instance without touching real devices or mounts."""
-        with mock.patch.object(SDCardManager, '_validate_target'), \
-             mock.patch.object(SDCardManager, '_perform_mount'):
+        with mock.patch.object(SDCardManager, 'validate_sudo', return_value=CommandResult('', '', 0)), \
+            mock.patch.object(SDCardManager, '_validate_target'), \
+            mock.patch.object(SDCardManager, '_perform_mount'):
             return SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test")
 
     def test_initial_state_empty(self):

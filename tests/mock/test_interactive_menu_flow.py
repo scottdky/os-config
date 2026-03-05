@@ -7,8 +7,8 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib import cmd_manager
-from lib.cmd_manager import SDCardManager
+from lib.managers import factory as cmd_manager
+from lib.managers import SDCardManager
 
 
 class _FakeTerminalMenu:

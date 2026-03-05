@@ -11,7 +11,7 @@ import json
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import SDCardManager
+from lib.managers import SDCardManager
 
 
 @pytest.mark.unit
@@ -31,7 +31,7 @@ class TestUsbDetectionClassmethod:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput)
 
             # Call as classmethod - no instance needed
@@ -44,7 +44,7 @@ class TestUsbDetectionClassmethod:
         """Verify return type is list of dictionaries."""
         mockOutput = json.dumps({"blockdevices": []})
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput)
 
             devices = SDCardManager.detect_usb_devices()
@@ -64,7 +64,7 @@ class TestUsbDetectionClassmethod:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput)
 
             devices = SDCardManager.detect_usb_devices()

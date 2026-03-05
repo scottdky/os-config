@@ -11,7 +11,7 @@ import stat
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import ImageFileManager
+from lib.managers import ImageFileManager
 
 
 @pytest.mark.mock
@@ -38,10 +38,10 @@ class TestLoopDetection:
             "/dev/loop0p2 /tmp/test ext4 rw 0 0\n"
         )
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.isfile', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_regular_file_stat()), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+             mock.patch('lib.managers.image.os.path.isfile', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_regular_file_stat()), \
              mock.patch('builtins.open', mock.mock_open(read_data=mockMounts)), \
              mock.patch.object(ImageFileManager, '_perform_mount'):
 
@@ -63,10 +63,10 @@ class TestLoopDetection:
         # Mock empty losetup -j output
         mockLosetup = ""
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.isfile', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_regular_file_stat()), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+             mock.patch('lib.managers.image.os.path.isfile', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_regular_file_stat()), \
              mock.patch.object(ImageFileManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(
@@ -92,10 +92,10 @@ class TestLoopDetection:
             "/dev/sda2 /home ext4 rw 0 0\n"
         )
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.isfile', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_regular_file_stat()), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+             mock.patch('lib.managers.image.os.path.isfile', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_regular_file_stat()), \
              mock.patch('builtins.open', mock.mock_open(read_data=mockMounts)), \
              mock.patch.object(ImageFileManager, '_perform_mount'):
 
@@ -124,10 +124,10 @@ class TestLoopDetection:
             "/dev/loop1p1 /other/mount vfat rw 0 0\n"
         )
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.isfile', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_regular_file_stat()), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+             mock.patch('lib.managers.image.os.path.isfile', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_regular_file_stat()), \
              mock.patch('builtins.open', mock.mock_open(read_data=mockMounts)), \
              mock.patch.object(ImageFileManager, '_perform_mount'):
 
@@ -155,10 +155,10 @@ class TestLoopDetection:
         )
 
         # Request mount at /tmp/test
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.isfile', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_regular_file_stat()), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+             mock.patch('lib.managers.image.os.path.isfile', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_regular_file_stat()), \
              mock.patch('builtins.open', mock.mock_open(read_data=mockMounts)), \
              mock.patch.object(ImageFileManager, '_perform_mount'):
 

@@ -14,7 +14,7 @@ import json
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import SDCardManager
+from lib.managers import SDCardManager
 
 
 @pytest.mark.mock
@@ -44,7 +44,7 @@ class TestUsbDetection:
             ]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(
                 returncode=0,
                 stdout=mockOutput
@@ -79,7 +79,7 @@ class TestUsbDetection:
             ]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(
                 returncode=0,
                 stdout=mockOutput
@@ -106,7 +106,7 @@ class TestUsbDetection:
             ]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(
                 returncode=0,
                 stdout=mockOutput
@@ -134,7 +134,7 @@ class TestUsbDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput1)
             devices = SDCardManager.detect_usb_devices()
             assert len(devices) == 1
@@ -151,7 +151,7 @@ class TestUsbDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput2)
             devices = SDCardManager.detect_usb_devices()
             assert len(devices) == 1
@@ -168,7 +168,7 @@ class TestUsbDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(returncode=0, stdout=mockOutput3)
             devices = SDCardManager.detect_usb_devices()
             assert len(devices) == 1
@@ -188,7 +188,7 @@ class TestUsbDetection:
             ]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun:
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun:
             mockRun.return_value = mock.Mock(
                 returncode=0,
                 stdout=mockOutput

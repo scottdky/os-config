@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Interactive debugger entrypoint for image/SD-card mount flow step-through."""
 
-from lib.cmd_manager import BaseImageManager, interactive_create_manager
+from lib.managers import BaseImageManager, interactive_create_manager
 
 
 def main() -> None:

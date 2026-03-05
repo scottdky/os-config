@@ -5,7 +5,7 @@ import pytest
 # Add project root to sys.path so we can import lib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
-from lib.cmd_manager import LocalManager, BaseImageManager, ImageFileManager, SDCardManager, DEFAULT_MOUNT_PATH
+from lib.managers import LocalManager, BaseImageManager, ImageFileManager, SDCardManager, DEFAULT_MOUNT_PATH
 
 pytestmark = pytest.mark.unit
 

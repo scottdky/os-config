@@ -12,7 +12,7 @@ import stat
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import SDCardManager
+from lib.managers import SDCardManager
 
 
 @pytest.mark.mock
@@ -46,10 +46,10 @@ class TestPartitionDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_block_device_stat()), \
-             mock.patch('lib.cmd_manager.os.path.isdir', return_value=False), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_block_device_stat()), \
+             mock.patch('lib.managers.image.os.path.isdir', return_value=False), \
              mock.patch.object(SDCardManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(
@@ -83,10 +83,10 @@ class TestPartitionDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_block_device_stat()), \
-             mock.patch('lib.cmd_manager.os.path.isdir', return_value=False), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_block_device_stat()), \
+             mock.patch('lib.managers.image.os.path.isdir', return_value=False), \
              mock.patch.object(SDCardManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(
@@ -115,10 +115,10 @@ class TestPartitionDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_block_device_stat()), \
-             mock.patch('lib.cmd_manager.os.path.isdir', return_value=False), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_block_device_stat()), \
+             mock.patch('lib.managers.image.os.path.isdir', return_value=False), \
              mock.patch.object(SDCardManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(
@@ -142,10 +142,10 @@ class TestPartitionDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_block_device_stat()), \
-             mock.patch('lib.cmd_manager.os.path.isdir', return_value=False), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_block_device_stat()), \
+             mock.patch('lib.managers.image.os.path.isdir', return_value=False), \
              mock.patch.object(SDCardManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(
@@ -184,10 +184,10 @@ class TestPartitionDetection:
             }]
         })
 
-        with mock.patch('lib.cmd_manager.subprocess.run') as mockRun, \
-             mock.patch('lib.cmd_manager.os.path.exists', return_value=True), \
-               mock.patch('lib.cmd_manager.os.stat', return_value=self._mock_block_device_stat()), \
-             mock.patch('lib.cmd_manager.os.path.isdir', return_value=False), \
+        with mock.patch('lib.managers.image.subprocess.run') as mockRun, \
+             mock.patch('lib.managers.image.os.path.exists', return_value=True), \
+               mock.patch('lib.managers.image.os.stat', return_value=self._mock_block_device_stat()), \
+             mock.patch('lib.managers.image.os.path.isdir', return_value=False), \
              mock.patch.object(SDCardManager, '_perform_mount'):
 
             mockRun.return_value = mock.Mock(

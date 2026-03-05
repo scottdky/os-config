@@ -12,7 +12,7 @@ import sys
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import ImageFileManager
+from lib.managers import ImageFileManager
 
 
 @pytest.mark.mock
@@ -51,7 +51,7 @@ class TestImageStagingPolicy:
 
         with mock.patch.object(manager, '_is_network_mounted_path', return_value=True), \
              mock.patch.object(manager, '_is_in_integration_fixtures', return_value=False), \
-             mock.patch('lib.cmd_manager.os.path.getsize', return_value=ImageFileManager.STAGE_THRESHOLD_BYTES), \
+             mock.patch('lib.managers.image.os.path.getsize', return_value=ImageFileManager.STAGE_THRESHOLD_BYTES), \
              mock.patch.object(manager, '_stage_image_to_temp', return_value='/tmp/staged.img') as stageMock:
             selectedPath = manager._prepare_image_path_for_mount()
 
@@ -68,9 +68,9 @@ class TestImageStagingPolicy:
 
         with mock.patch.object(manager, '_is_network_mounted_path', return_value=True), \
              mock.patch.object(manager, '_is_in_integration_fixtures', return_value=False), \
-             mock.patch('lib.cmd_manager.os.path.getsize', return_value=imageSize), \
-             mock.patch('lib.cmd_manager.sys.stdin.isatty', return_value=False), \
-             mock.patch('lib.cmd_manager.sys.stdout.isatty', return_value=False):
+             mock.patch('lib.managers.image.os.path.getsize', return_value=imageSize), \
+             mock.patch('lib.managers.image.sys.stdin.isatty', return_value=False), \
+             mock.patch('lib.managers.image.sys.stdout.isatty', return_value=False):
             with pytest.raises(RuntimeError, match='too large for automatic staging'):
                 manager._prepare_image_path_for_mount()
 
@@ -87,7 +87,7 @@ class TestImageStagingPolicy:
 
         with mock.patch.object(manager, '_is_network_mounted_path', return_value=True), \
              mock.patch.object(manager, '_is_in_integration_fixtures', return_value=True), \
-             mock.patch('lib.cmd_manager.os.path.getsize', return_value=imageSize), \
+             mock.patch('lib.managers.image.os.path.getsize', return_value=imageSize), \
              mock.patch.object(manager, '_stage_image_to_temp', return_value='/tmp/fixture-staged.img') as stageMock:
             selectedPath = manager._prepare_image_path_for_mount()
 
@@ -105,7 +105,7 @@ class TestImageStagingPolicy:
 
         with mock.patch.object(manager, '_is_network_mounted_path', return_value=True), \
              mock.patch.object(manager, '_is_in_integration_fixtures', return_value=False), \
-             mock.patch('lib.cmd_manager.os.path.getsize', return_value=imageSize), \
+             mock.patch('lib.managers.image.os.path.getsize', return_value=imageSize), \
              mock.patch.object(manager, '_get_available_memory_bytes', return_value=8 * 1024 * 1024 * 1024), \
              mock.patch.object(manager, '_get_tmp_available_bytes', return_value=20 * 1024 * 1024 * 1024), \
              mock.patch.object(manager, '_confirm_stage_large_image', return_value=True), \
@@ -125,7 +125,7 @@ class TestImageStagingPolicy:
 
         with mock.patch.object(manager, '_is_network_mounted_path', return_value=True), \
              mock.patch.object(manager, '_is_in_integration_fixtures', return_value=False), \
-             mock.patch('lib.cmd_manager.os.path.getsize', return_value=imageSize), \
+             mock.patch('lib.managers.image.os.path.getsize', return_value=imageSize), \
              mock.patch.object(manager, '_get_available_memory_bytes', return_value=8 * 1024 * 1024 * 1024), \
              mock.patch.object(manager, '_get_tmp_available_bytes', return_value=20 * 1024 * 1024 * 1024), \
              mock.patch.object(manager, '_confirm_stage_large_image', return_value=False):
@@ -170,7 +170,7 @@ class TestImageStagingPolicy:
         """Manager close should always cleanup staged image copy."""
         manager = self._create_manager('/tmp/source.img')
 
-        with mock.patch('lib.cmd_manager.BaseImageManager.close') as baseCloseMock, \
+        with mock.patch('lib.managers.image.BaseImageManager.close') as baseCloseMock, \
              mock.patch.object(manager, '_cleanup_staged_image') as cleanupMock:
             manager.close()
 
@@ -181,7 +181,7 @@ class TestImageStagingPolicy:
         """Manager close should cleanup staged image even if base close raises."""
         manager = self._create_manager('/tmp/source.img')
 
-        with mock.patch('lib.cmd_manager.BaseImageManager.close', side_effect=RuntimeError('close failed')), \
+        with mock.patch('lib.managers.image.BaseImageManager.close', side_effect=RuntimeError('close failed')), \
              mock.patch.object(manager, '_cleanup_staged_image') as cleanupMock:
             with pytest.raises(RuntimeError, match='close failed'):
                 manager.close()

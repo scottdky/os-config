@@ -9,7 +9,7 @@ This file provides a quick reference for the refactored API.
 # IMPORTS
 # ============================================================================
 
-from lib.cmd_manager import (
+from lib.managers import (
     create_manager,
     ImageFileManager,
     SDCardManager,
@@ -150,7 +150,7 @@ with SDCardManager(devicePath='/dev/sdb', forceUnmount=True) as mgr:
 # INTERACTIVE MANAGER CREATION
 # ============================================================================
 
-from lib.cmd_manager import interactive_create_manager
+from lib.managers import interactive_create_manager
 
 # Shows menu to select manager type and configure interactively
 mgr = interactive_create_manager()

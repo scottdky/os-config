@@ -5,7 +5,7 @@ Example usage of the multi-location OS manager.
 Demonstrates how to use the same interface for localhost, remote SSH, and chroot operations.
 """
 
-from lib.cmd_manager import create_manager
+from lib.managers import create_manager
 
 
 def demo_local():

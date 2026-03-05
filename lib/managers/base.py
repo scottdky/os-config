@@ -1,0 +1,362 @@
+"""Base manager abstractions and shared host-side helpers."""
+
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from types import TracebackType
+
+DEFAULT_MOUNT_PATH = '/tmp/os_image'
+
+
+@dataclass
+class CommandResult:
+    """Normalized command execution result.
+
+    Additional info (multi-line): this wraps command output in a stable
+    project-local shape while preserving backward compatibility for existing
+    tuple-unpacking code paths.
+    """
+    stdout: str
+    stderr: str
+    returnCode: int
+
+    def __iter__(self):
+        """Allow tuple-style unpacking: stdout, stderr, code = result."""
+        yield self.stdout
+        yield self.stderr
+        yield self.returnCode
+
+
+class BaseManager:
+    """Base class defining the common interface for all managers"""
+
+    def __init__(self, allowInteractiveSudo: bool = True) -> None:
+        """Initialize shared manager state.
+
+        Args:
+            allowInteractiveSudo (bool): Default policy for whether local sudo
+                validation may prompt interactively via ``sudo -v``.
+        """
+        self.allowInteractiveSudo = allowInteractiveSudo
+
+    def run(self, command: str, sudo: bool = False) -> CommandResult:
+        """Execute a command.
+
+        Additional info (multi-line): concrete subclasses implement this to
+        run commands in their respective execution contexts and return the
+        standard output, standard error, and exit status.
+
+        Args:
+            command (str): Command to execute.
+            sudo (bool): Whether to run with elevated privileges, if
+                supported by the concrete manager.
+
+        Returns:
+            CommandResult: Standardized command output and exit status.
+        """
+        raise NotImplementedError
+
+    def exists(self, remotePath: str) -> bool:
+        """Check if file/directory exists"""
+        raise NotImplementedError
+
+    def put(self, localPath: str, remotePath: str, sudo: bool = False) -> None:
+        """Upload or copy a file to the target.
+
+        Additional info (multi-line): concrete subclasses provide the
+        implementation for copying data from the host to the target
+        environment (local filesystem, SSH target, or chroot filesystem).
+
+        Args:
+            localPath (str): Path to the source file on the host
+                filesystem.
+            remotePath (str): Destination path as it should appear on the
+                target.
+            sudo (bool): Whether to use elevated privileges when writing
+                the file on the target, if supported.
+        """
+        raise NotImplementedError
+
+    def get(self, remotePath: str, localPath: str, sudo: bool = False) -> None:
+        """Download a file from the target to local filesystem.
+
+        Args:
+            remotePath (str): Source path on target.
+            localPath (str): Destination path on local filesystem.
+            sudo (bool): Whether to use elevated privileges for reading.
+        """
+        raise NotImplementedError
+
+    def read_file(self, remotePath: str, sudo: bool = False) -> str:
+        """Read file content and return as string.
+
+        Args:
+            remotePath (str): Path to file on target.
+            sudo (bool): Whether to use elevated privileges.
+
+        Returns:
+            str: File content or empty string on error.
+        """
+        commandResult = self.run(f'cat {remotePath}', sudo=sudo)
+        return commandResult.stdout if commandResult.returnCode == 0 else ''
+
+    def write_file(self, remotePath: str, content: str, sudo: bool = False) -> None:
+        """Replace entire contents of a file.
+
+        Args:
+            remotePath (str): Path to the target file.
+            content (str): New content to write.
+            sudo (bool): Whether to use elevated privileges.
+        """
+        fd, tempPath = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(content)
+            self.put(tempPath, remotePath, sudo=sudo)
+        finally:
+            if os.path.exists(tempPath):
+                os.remove(tempPath)
+
+    def append(self, remotePath: str, content: str | list[str], sudo: bool = False) -> None:
+        """
+        Append content to a remote file (only if not existing),
+        or uncomment if present but commented out.
+
+        Args:
+            remotePath (str): Path to the target file on the remote system.
+            content (str | list[str]): Content to append or uncomment.
+            sudo (bool, optional): Whether to use elevated privileges. Defaults to False.
+        """
+        if isinstance(content, str):
+            lines_to_add = [l for l in content.splitlines() if l.strip()]
+        else:
+            lines_to_add = [l for l in content if l.strip()]
+
+        if not lines_to_add:
+            return
+
+        existing_content = ''
+        if self.exists(remotePath):
+            existing_content = self.read_file(remotePath, sudo=sudo)
+
+        existing_lines = existing_content.splitlines()
+        modified = False
+
+        for line in lines_to_add:
+            if line in existing_lines:
+                continue
+
+            escape_line = re.escape(line)
+            pattern = re.compile(r'^\s*#\s*' + escape_line + r'\s*$')
+
+            found_commented = False
+            for i, existing_line in enumerate(existing_lines):
+                if pattern.match(existing_line):
+                    existing_lines[i] = line
+                    modified = True
+                    found_commented = True
+                    print(f"Uncommented line in {remotePath}: {line.strip()[:50]}...")
+                    break
+
+            if found_commented:
+                continue
+
+            existing_lines.append(line)
+            modified = True
+            print(f"Appended to {remotePath}: {line.strip()[:50]}...")
+
+        if modified:
+            new_content = '\n'.join(existing_lines) + '\n'
+            fd, temp_path = tempfile.mkstemp()
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    f.write(new_content)
+                self.put(temp_path, remotePath, sudo=sudo)
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        else:
+            print(f"No changes made to {remotePath}")
+
+    def sed(self, remotePath: str, before: str, after: str, useRegex: bool = False,
+            limit: int = 0, backup: str = '.bak', sudo: bool = False) -> None:
+        """Perform in-place search and replace on a file (like sed -i)."""
+        if not self.exists(remotePath):
+            print(f"File not found: {remotePath}")
+            return
+
+        existing_content = self.read_file(remotePath, sudo=sudo)
+        if not existing_content:
+            print(f"Could not read file: {remotePath}")
+            return
+
+        if useRegex:
+            newContent = re.sub(before, after, existing_content, count=0 if limit == 0 else limit)
+        else:
+            if limit == 0:
+                newContent = existing_content.replace(before, after)
+            else:
+                newContent = existing_content.replace(before, after, limit)
+
+        if newContent == existing_content:
+            print(f"No changes made to {remotePath} (pattern not found)")
+            return
+
+        if backup:
+            backupPath = f"{remotePath}{backup}"
+            fd, tempBackup = tempfile.mkstemp()
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    f.write(existing_content)
+                self.put(tempBackup, backupPath, sudo=sudo)
+                print(f"Created backup: {backupPath}")
+            finally:
+                if os.path.exists(tempBackup):
+                    os.remove(tempBackup)
+
+        fd, tempPath = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(newContent)
+            self.put(tempPath, remotePath, sudo=sudo)
+            print(f"Modified {remotePath}")
+        finally:
+            if os.path.exists(tempPath):
+                os.remove(tempPath)
+
+    def _run_local(self, command: str, sudo: bool = False,
+                   allowInteractiveSudo: bool | None = None) -> CommandResult:
+        """Run a shell command on the host system."""
+        def _exec(commandArgs: list[str]) -> CommandResult:
+            result = subprocess.run(commandArgs, capture_output=True, text=True, check=False)
+            return CommandResult(result.stdout, result.stderr, result.returncode)
+
+        effectiveAllowInteractiveSudo = self.allowInteractiveSudo if allowInteractiveSudo is None else allowInteractiveSudo
+
+        try:
+            if not sudo:
+                return _exec(['bash', '-lc', command])
+
+            sudoCheckResult = self.validate_sudo(allowInteractiveSudo=effectiveAllowInteractiveSudo)
+            if sudoCheckResult.returnCode != 0:
+                return sudoCheckResult
+
+            return _exec(['sudo', '-n', 'bash', '-lc', command])
+        except Exception as e:
+            return CommandResult('', str(e), 1)
+
+    def validate_sudo(self, allowInteractiveSudo: bool | None = None) -> CommandResult:
+        """Validate local sudo availability for privileged host commands."""
+        def _exec(commandArgs: list[str]) -> CommandResult:
+            result = subprocess.run(commandArgs, capture_output=True, text=True, check=False)
+            return CommandResult(result.stdout, result.stderr, result.returncode)
+
+        def _requires_auth(stderr: str) -> bool:
+            lowerStderr = stderr.lower()
+            return (
+                'a password is required' in lowerStderr or
+                'no tty present and no askpass program specified' in lowerStderr or
+                'sudo: authentication is required' in lowerStderr
+            )
+
+        effectiveAllowInteractiveSudo = self.allowInteractiveSudo if allowInteractiveSudo is None else allowInteractiveSudo
+
+        try:
+            sudoCheckResult = _exec(['sudo', '-n', 'true'])
+            if sudoCheckResult.returnCode == 0:
+                return sudoCheckResult
+
+            if not _requires_auth(sudoCheckResult.stderr) or not effectiveAllowInteractiveSudo:
+                return sudoCheckResult
+
+            refreshResult = _exec(['sudo', '-v'])
+            if refreshResult.returnCode != 0:
+                stderr = refreshResult.stderr.strip() or 'sudo authentication failed (sudo -v)'
+                return CommandResult(refreshResult.stdout, stderr, refreshResult.returnCode)
+
+            return _exec(['sudo', '-n', 'true'])
+        except Exception as e:
+            return CommandResult('', str(e), 1)
+
+    def _ensure_local_directory(self, path: str, sudo: bool = False) -> CommandResult:
+        """Ensure a host-side directory exists."""
+        if not path:
+            return CommandResult('', 'Directory path is required', 1)
+
+        if sudo:
+            return self._run_local(f'mkdir -p {shlex.quote(path)}', sudo=True)
+
+        try:
+            os.makedirs(path, exist_ok=True)
+            return CommandResult('', '', 0)
+        except Exception as e:
+            return CommandResult('', str(e), 1)
+
+    def _remove_local_directory(self, path: str, sudo: bool = False) -> CommandResult:
+        """Remove a host-side directory if it exists and is empty."""
+        if not path or not os.path.exists(path):
+            return CommandResult('', '', 0)
+
+        if sudo:
+            return self._run_local(f'rmdir {shlex.quote(path)}', sudo=True)
+
+        try:
+            os.rmdir(path)
+            return CommandResult('', '', 0)
+        except Exception as e:
+            return CommandResult('', str(e), 1)
+
+    def _put_local(self, localPath: str, remotePath: str, sudo: bool = False,
+                   base_dir: str | None = None, ensure_dir_when_not_sudo: bool = False,
+                   label: str | None = None) -> None:
+        """Helper for local-style copy (localhost or chroot filesystem)."""
+        if base_dir:
+            relPath = remotePath[1:] if remotePath.startswith('/') else remotePath
+            destPath = os.path.join(base_dir, relPath)
+        else:
+            destPath = remotePath
+
+        try:
+            if ensure_dir_when_not_sudo:
+                destDir = os.path.dirname(destPath)
+                if destDir:
+                    mkdirResult = self._ensure_local_directory(destDir, sudo=sudo)
+                    if mkdirResult.returnCode != 0:
+                        context = f" {label}" if label else ''
+                        print(f"Error creating destination directory{context}: {mkdirResult.stderr}")
+                        return
+
+            if sudo:
+                _, stderr, code = self._run_local(
+                    f'cp {shlex.quote(localPath)} {shlex.quote(destPath)}',
+                    sudo=True
+                )
+                if code != 0:
+                    context = f" {label}" if label else ''
+                    print(f"Error copying file{context}: {stderr}")
+                    return
+            else:
+                shutil.copy2(localPath, destPath)
+
+            suffix = f" ({label})" if label else ''
+            print(f"Copied {localPath} -> {remotePath}{suffix}")
+        except Exception as e:
+            context = f" {label}" if label else ''
+            print(f"Error copying file{context}: {e}")
+
+    def close(self) -> None:
+        """Clean up resources"""
+        return
+
+    def __enter__(self) -> "BaseManager":
+        return self
+
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        self.close()
+
+
+__all__ = ['DEFAULT_MOUNT_PATH', 'CommandResult', 'BaseManager']

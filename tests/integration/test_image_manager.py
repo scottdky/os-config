@@ -11,7 +11,7 @@ import tempfile
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.cmd_manager import ImageFileManager
+from lib.managers import ImageFileManager
 
 
 @pytest.mark.integration

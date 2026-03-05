@@ -1,0 +1,34 @@
+"""Interactive menu helpers for manager selection flows."""
+
+from typing import cast
+
+
+def get_user_selection(options: list[str], title: str = 'Select operation', addExit: str | bool = 'Exit') -> int | None:
+    """Prompt user to select an option from a terminal menu.
+
+    Args:
+        options (list[str]): List of options to display.
+        title (str): Title for the selection menu.
+        addExit (str | bool): Exit option label. Pass a string to customize the label,
+            False to disable, or True/'Exit' for standard exit behavior.
+
+    Returns:
+        int | None: Index of selected option from `options`, or None if cancelled/exit chosen.
+    """
+    menuOptions = options.copy()
+    if addExit is True:
+        addExit = 'Exit'
+    if addExit:
+        menuOptions.append(addExit)
+
+    import simple_term_menu
+    menuClass = simple_term_menu.TerminalMenu
+
+    menu = menuClass(menuOptions, title=title)
+    menuEntryIndex = cast(int | None, menu.show())
+    if menuEntryIndex is None:
+        return None
+    if addExit and menuEntryIndex == len(menuOptions) - 1:
+        return None
+
+    return menuEntryIndex
