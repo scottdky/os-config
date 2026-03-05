@@ -42,6 +42,8 @@ import shlex
 import paramiko
 from dataclasses import dataclass
 from types import TracebackType
+from typing import cast
+from simple_term_menu import TerminalMenu
 
 DEFAULT_MOUNT_PATH = '/tmp/os_image'
 
@@ -63,6 +65,33 @@ class CommandResult:
         yield self.stdout
         yield self.stderr
         yield self.returnCode
+
+def get_user_selection(options: list[str], title: str = 'Select operation', addExit: str | bool = 'Exit') -> int | None:
+    """Prompt user to select the operation when not provided on the CLI.
+
+    Args:
+        options (list[str]): List of options to display.
+        title (str): Title for the selection menu.
+        addExit (str | bool): Exit option label. Pass a string to customize the label,
+            False to disable, or 'Exit' (default) for standard exit behavior.
+
+    Returns:
+        int | None: Index of the selected operation, or None if cancelled.
+    """
+    menuOptions = options.copy()
+    if addExit is True:
+        addExit = 'Exit'
+    if addExit:
+        menuOptions.append(addExit)
+
+    menu = TerminalMenu(menuOptions, title=title)
+    menuEntryIndex = cast(int | None, menu.show()) # hack to avoid error about possible tuple return type from show()
+    if menuEntryIndex is None:
+        return None
+    if addExit and menuEntryIndex == len(menuOptions) - 1:
+        return None # Exit was chosen
+
+    return menuEntryIndex
 
 
 class BaseManager:
@@ -1434,11 +1463,6 @@ class SDCardManager(BaseImageManager):
         Returns:
             SDCardManager | None: Configured manager for selected device, or None if user aborts.
         """
-        try:
-            from simple_term_menu import TerminalMenu
-        except ImportError:
-            raise ImportError("simple-term-menu required. Install with: pip install simple-term-menu")
-
         devices = cls.detect_usb_devices()
 
         if not devices:
@@ -1453,26 +1477,16 @@ class SDCardManager(BaseImageManager):
             options.append(option)
             print(f"{i}. {option}")
 
-        options.append("Abort (back to main menu)")
-
-        menu = TerminalMenu(options, title="Select USB device:")
-        selectedIdx = menu.show()
-
+        selectedIdx = get_user_selection(options, title="Select USB device:", addExit="Abort (back to main menu)")
         if selectedIdx is None:
             return None
 
-        if int(selectedIdx) == len(devices):
-            return None
-
-        # Type assertion for selectedIdx (it's an int here, not None or tuple)
-        selectedDevice = devices[int(selectedIdx)]
+        selectedDevice = devices[selectedIdx]
 
         # Confirmation
         print(f"\nSelected: {selectedDevice['device']} - {selectedDevice['size']} {selectedDevice['vendor']} {selectedDevice['model']}")
-        confirmMenu = TerminalMenu(["No (back to main menu)", "Yes"], title="Confirm device selection?")
-        confirmed = confirmMenu.show()
-
-        if confirmed != 1:
+        confirmedIdx = get_user_selection(["No (back to main menu)", "Yes"], title="Confirm device selection?", addExit=False)
+        if confirmedIdx != 1:
             return None
 
         return cls(
@@ -1540,26 +1554,18 @@ def interactive_create_manager() -> BaseManager | None:
     Returns:
         BaseManager | None: The created manager or None if cancelled.
     """
-    try:
-        from simple_term_menu import TerminalMenu
-    except ImportError:
-        print("Error: simple-term-menu is not installed. Run 'pip install simple-term-menu'")
-        return None
-
-    options = ["Local (localhost)", "SSH (Remote)", "Image File", "SD Card", "Exit"]
+    options = ["Local (localhost)", "SSH (Remote)", "Image File", "SD Card"]
 
     while True:
-        terminalMenu = TerminalMenu(options, title="Select Manager Mode")
-        menuEntryIndex = terminalMenu.show()
-
-        if menuEntryIndex is None or menuEntryIndex == 4:
+        selectedModeIdx = get_user_selection(options, title="Select Manager Mode")
+        if selectedModeIdx is None:
             print("Exiting manager selection.")
             return None
 
-        if menuEntryIndex == 0:
+        if selectedModeIdx == 0:
             return create_manager('local')
 
-        if menuEntryIndex == 1:
+        if selectedModeIdx == 1:
             print("\n--- SSH Configuration ---")
             hostName = input("Hostname: ").strip()
             while not hostName:
@@ -1572,7 +1578,7 @@ def interactive_create_manager() -> BaseManager | None:
             return create_manager('ssh', hostName=hostName, userName=userName,
                                   keyFilename=keyFilename, password=password)
 
-        if menuEntryIndex == 2:
+        if selectedModeIdx == 2:
             print("\n--- Image File Configuration ---")
             imagePath = input("Image File Path (required): ").strip()
             while not imagePath:
@@ -1582,19 +1588,19 @@ def interactive_create_manager() -> BaseManager | None:
 
             return create_manager('image', imagePath=imagePath, mountPath=mountPath)
 
-        if menuEntryIndex == 3:
+        if selectedModeIdx == 3:
             print("\n--- SD Card Configuration ---")
 
-            modeMenu = TerminalMenu(
-                ["Auto-detect USB devices", "Enter device path manually", "Back to main menu"],
-                title="SD Card Selection"
+            sdCardSelectionModeIdx = get_user_selection(
+                ["Auto-detect USB devices", "Enter device path manually"],
+                title="SD Card Selection",
+                addExit="Back to main menu"
             )
-            modeIdx = modeMenu.show()
 
-            if modeIdx is None or modeIdx == 2:
+            if sdCardSelectionModeIdx is None:
                 continue
 
-            if modeIdx == 0:
+            if sdCardSelectionModeIdx == 0:
                 manager = SDCardManager.from_interactive_selection(
                     mountPath=DEFAULT_MOUNT_PATH
                 )

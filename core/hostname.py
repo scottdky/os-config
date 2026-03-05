@@ -9,17 +9,27 @@ This module follows a two-phase architecture:
 
 Usage:
     # Standalone - run as script (supports: all, hostname, username, password)
-    python hostname.py              # All operations (default)
+    python hostname.py              # Interactive operation menu
     python hostname.py hostname     # Only set hostname
     python hostname.py password     # Only set password
 
     # Programmatic - single operation
     from lib.cmd_manager import create_manager
-    from lib.config import load_and_validate_config
+    from lib.config import resolve_config_values, validate_and_prompt
     from core import hostname
 
-    configs = load_and_validate_config('hostname', hostname.REQUIRED_CONFIGS)
+    configs, missingKeys = resolve_config_values('hostname', hostname.REQUIRED_CONFIGS)
     with create_manager('ssh', hostName='192.168.1.100', userName='pi') as mgr:
+        defaults = {
+            'hostname': hostname.get_current_hostname(mgr),
+            'username': hostname.get_current_user(mgr),
+        }
+        configs = validate_and_prompt(
+            hostname.REQUIRED_CONFIGS,
+            configs,
+            keysToPrompt=missingKeys,
+            defaultOverrides=defaults,
+        )
         if configs.get('hostname'):
             hostname.set_host(mgr, configs['hostname'])
         if configs.get('password'):
@@ -27,9 +37,15 @@ Usage:
 
     # Orchestrated - multiple operations
     # See example_master_script.py for full pattern
-    hostname_cfg = load_and_validate_config('hostname', hostname.REQUIRED_CONFIGS)
+    hostname_cfg, missingKeys = resolve_config_values('hostname', hostname.REQUIRED_CONFIGS)
     network_cfg = load_and_validate_config('network', network.REQUIRED_CONFIGS)
     with create_manager('chroot', autoMount=True, imagePath='/dev/sdb') as mgr:
+        hostname_cfg = validate_and_prompt(
+            hostname.REQUIRED_CONFIGS,
+            hostname_cfg,
+            keysToPrompt=missingKeys,
+            defaultOverrides={'hostname': hostname.get_current_hostname(mgr)},
+        )
         if hostname_cfg.get('hostname'):
             hostname.set_host(mgr, hostname_cfg['hostname'])
         if network_cfg.get('ssid'):
@@ -38,9 +54,9 @@ Usage:
 Configuration:
     Add to config.yaml:
     hostname:
-        hostname: newhost      # or "Ask" to prompt
-        username: newuser      # or "Ask" to prompt
-        password: Ask          # Secure prompt recommended
+        hostname: newhost      # if missing, prompt after manager is ready
+        username: newuser      # if missing, prompt after manager is ready
+        password: s3cr3t       # if missing, secure prompt is required
 """
 import os
 import sys
@@ -49,8 +65,8 @@ import argparse
 # pylint: disable=wrong-import-position
 # Ensure project root is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
-from lib.cmd_manager import BaseManager, interactive_create_manager
-from lib.config import load_and_validate_config
+from lib.cmd_manager import BaseManager, interactive_create_manager, get_user_selection
+from lib.config import resolve_config_values, validate_and_prompt
 # pylint: enable=wrong-import-position
 
 
@@ -59,17 +75,14 @@ REQUIRED_CONFIGS = {
     'hostname': {
         'type': 'str',
         'prompt': 'Enter new hostname (press Enter to keep default: {default})',
-        'default': None,  # None = optional (will skip if empty)
     },
     'username': {
         'type': 'str',
         'prompt': 'Enter new username (press Enter to keep default: {default})',
-        'default': None,  # None = optional (will skip if empty)
     },
     'password': {
         'type': 'str',
         'prompt': 'Enter password for user',
-        'default': None,  # None = required (must prompt)
         'secure': True,
     },
 }
@@ -85,8 +98,8 @@ def set_host(mgr: BaseManager, newName: str) -> bool:
     Returns:
         bool: True if hostname was changed, False if already set.
     """
-    oldName, _, _ = mgr.run('cat /etc/hostname')
-    oldName = oldName.strip()
+    hostNameResult = mgr.run('cat /etc/hostname')
+    oldName = hostNameResult.stdout.strip()
 
     if oldName == newName:
         print(f"Hostname is already {newName}, no change needed.")
@@ -158,48 +171,90 @@ def get_current_user(mgr: BaseManager) -> str:
     Returns:
         str: Username (defaults to 'pi' if unable to determine).
     """
-    userList, _, code = mgr.run("getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}'", sudo=False)
-    if code == 0 and userList.strip():
-        return userList.strip().split('\n')[0]
+    userListResult = mgr.run("getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}'", sudo=False)
+    if userListResult.returnCode == 0 and userListResult.stdout.strip():
+        return userListResult.stdout.strip().split('\n')[0]
     return 'pi'  # Default fallback
 
 
+def get_current_hostname(mgr: BaseManager) -> str:
+    """Get current hostname from target system.
+
+    Args:
+        mgr (BaseManager): Manager instance for command execution.
+
+    Returns:
+        str: Current hostname, or empty string if unavailable.
+    """
+    hostNameResult = mgr.run('cat /etc/hostname', sudo=False)
+    if hostNameResult.returnCode == 0:
+        return hostNameResult.stdout.strip()
+    return ''
+
+
 if __name__ == '__main__':
-    """Run interactively when executed as a script."""
+    # Run interactively when executed as a script.
+    CHOICES = ['hostname', 'username', 'password', 'all']
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Configure hostname, username, and password')
-    parser.add_argument('operation', nargs='?', default='all',
-                       choices=['hostname', 'username', 'password', 'all'],
-                       help='Operation to perform (default: all)')
+    parser.add_argument('operation', nargs='?', choices=CHOICES,
+                       help='Operation to perform (if omitted, interactive menu is shown)')
     args = parser.parse_args()
 
+    operation = args.operation
+    if operation is None:
+        index = get_user_selection(CHOICES, "Select operation to perform:")
+        if index is None:
+            print('No operation selected. Exiting.')
+            sys.exit(0)
+        operation = CHOICES[index]
+
     # Determine which configs to query based on operation
-    if args.operation == 'all':
+    if operation == 'all':
         configsToQuery = REQUIRED_CONFIGS
     else:
         # Only query the specific config needed
-        configsToQuery = {args.operation: REQUIRED_CONFIGS[args.operation]}
+        configsToQuery = {operation: REQUIRED_CONFIGS[operation]}
 
-    # Load configuration from YAML and prompt for missing values
-    allConfigs = load_and_validate_config('hostname', configsToQuery)
+    # Pre-mount resolution: determine unresolved required keys without prompting
+    allConfigs, missingKeys = resolve_config_values('hostname', configsToQuery)
+
+    if missingKeys and (not sys.stdin.isatty() or not sys.stdout.isatty()):
+        missingText = ', '.join(missingKeys)
+        print(f'Cannot prompt for missing required config(s) in non-interactive mode: {missingText}')
+        sys.exit(1)
 
     # Create and execute with manager
     manager = interactive_create_manager()
     if manager:
         with manager:
+            # Post-mount prompting with target-derived defaults
+            defaultOverrides = {}
+            if 'hostname' in missingKeys:
+                defaultOverrides['hostname'] = get_current_hostname(manager)
+            if 'username' in missingKeys:
+                defaultOverrides['username'] = get_current_user(manager)
+
+            allConfigs = validate_and_prompt(
+                configsToQuery,
+                allConfigs,
+                keysToPrompt=missingKeys,
+                defaultOverrides=defaultOverrides,
+            )
+
             changed = False
 
             # Execute based on operation
-            if args.operation in ('hostname', 'all') and allConfigs.get('hostname'):
+            if operation in ('hostname', 'all') and allConfigs.get('hostname'):
                 changed |= set_host(manager, allConfigs['hostname'])
 
-            if args.operation in ('username', 'all') and allConfigs.get('username'):
+            if operation in ('username', 'all') and allConfigs.get('username'):
                 origUser = get_current_user(manager)
                 changed |= set_user(manager, origUser, allConfigs['username'])
 
-            if args.operation in ('password', 'all') and allConfigs.get('password'):
-                userName = allConfigs.get('username') or get_current_user(manager)
-                changed |= set_pass(manager, userName, allConfigs['password'])
+            if operation in ('password', 'all') and allConfigs.get('password'):
+                targetUserName = allConfigs.get('username') or get_current_user(manager)
+                changed |= set_pass(manager, targetUserName, allConfigs['password'])
 
             if changed:
                 print('...Done\n')

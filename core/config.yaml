@@ -2,11 +2,9 @@ serialport:
     enable_uart: True
     baudrate: 115200
     bluetooth: False # If True and enable_uart is True, bluetooth will assigned to mini-UART
-    console: # If True, the console will be enabled on the serial port during startup
-        ask: true
-        type: boolean
-        default: false
-        prompt: "Enable serial console on boot [true|yes or false|no]? "
+    # If True, the console will be enabled on the serial port during startup
+    # console: false # Uncomment to set explicitly. If omitted and required by an operation, user is prompted.
+    # prompt: "Enable serial console on boot [true|yes or false|no]? "
 
 bash_util:
     apps: # List of extra apps to install
@@ -42,6 +40,6 @@ rtc:
 #     imagefile: /home/foo/splash.png  # Path to the splash screen image file
 
 # network:
-#     wifi_ssid: Ask
-#     wifi_password: Ask
+#     wifi_ssid: MyNetworkName
+#     # wifi_password omitted -> prompted when required by selected operation
 #     dhcp: True

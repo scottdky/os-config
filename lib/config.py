@@ -1,36 +1,30 @@
 #!/usr/bin/env python3
 
-""" Utilities for managing configurations needed for various operations.
+"""Utilities for operation configuration loading and prompting.
 
-With these utilities, operations can load configurations from a YAML file,
-or if they are not specified, they will prompt the user for input.
+Additional info (multi-line): this module defines the contract between
+operation schemas (``REQUIRED_CONFIGS`` in Python modules) and YAML values
+(``config.yaml`` hierarchy).
 
-This can be extra useful for scripts that implement multiple operations
-for a specified setup, without needed to prompt the user later on in the
-process. It also eliminates the need to prompt the user at all for
-most settings.
+REQUIRED_CONFIGS field schema (per key):
+        - ``type`` (str, optional): cast hint for prompted input. Supported aliases:
+            bool/int/float/str.
+        - ``prompt`` (str, optional): prompt text. May include ``{default}``.
+        - ``default`` (Any, optional): static fallback used when YAML key is missing.
+        - ``secure`` (bool, optional): if true, prompt using hidden input with
+            confirmation (for secrets like passwords).
 
-The YAML file should be structured as follows:
+YAML value rules (per operation section):
+        - Key present with value -> use that value.
+        - Key present with ``null`` -> explicit None value.
+        - Key missing -> unresolved; if key exists in REQUIRED_CONFIGS and no static
+            default applies, it is reported as missing and prompted later.
 
-# config.yaml
-
-serialport:
-    enable_uart: True
-    baudrate: Ask      # Will prompt user if "Ask"
-    device: /dev/ttyS0
-    add_user_to_dialout: True
-    # flow_control: True
-
-network:
-    wifi_ssid: Ask
-    wifi_password: Ask
-    dhcp: True
-
-When a user should be prompted, the value should be set to "Ask".
-Alternatively, an operation can specify a set of required keys
-and if a key is not found, it will prompt the user for the setting
-for that key. In the example above, the key 'flow_control' is commented out,
-so the user will be prompted for it if the operation specifies it as a required key.
+Resolution flow:
+        1) ``resolve_config_values``: load YAML + apply static defaults + report
+             missing keys (no prompting).
+        2) ``validate_and_prompt``: prompt unresolved keys, optionally with runtime
+             ``defaultOverrides`` (for example current target OS hostname).
 """
 
 from typing import Any, Dict, Optional
@@ -202,51 +196,99 @@ def _load_and_merge_configs() -> Dict[str, Any]:
     return final_config
 
 def load_config(operation: str, requiredConfigs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Load configuration for a specific operation from config files.
+    """Load merged YAML configuration for one operation section.
 
-    If a key is set to "Ask" or if it is not found, the user will be prompted
-    for the value. If requiredKeys are specified, it will also prompt for those keys
-    if they are not found in the operation's configuration.
+    Additional info (multi-line): this function only reads and returns values
+    from config files. It does not prompt users and does not inject schema
+    metadata into returned values.
 
     Args:
-        operation (str): Section of the config to load.
-        requiredConfigs (Dict[str, Any], optional): Keys that must be present. Defaults to None.
+        operation (str): Section name to load from YAML hierarchy.
+        requiredConfigs (Dict[str, Any], optional): Unused compatibility
+            parameter retained for legacy callers.
 
     Returns:
-        Dict[str, Any]: The final configuration dictionary.
+        Dict[str, Any]: Values found under the operation section.
     """
+    _ = requiredConfigs
     configPars = _load_and_merge_configs()
     opConfig = configPars.get(operation, {})
-    finalConfig = {}
-    for key, value in opConfig.items():
-        if isinstance(value, dict):
-            askFlag = bool(value.get('ask', False))
-            typeName = value.get('type', None)
-            default = value.get('default', None)
-            prompt = value.get('prompt', None)
-        else:
-            askFlag = False
-            typeName = None
-            default = value
-            prompt = None
+    if isinstance(opConfig, dict):
+        return opConfig.copy()
+    return {}
 
-        if (isinstance(value, str) and value.lower() == "ask") or askFlag:
-            while True:
-                try:
-                    finalConfig[key] = _prompt_for_value(key, typeName, default, prompt)
-                    break
-                except ValueError as e:
-                    print(f"Error: {e}. Please try again.")
-        else:
-            finalConfig[key] = default
 
-    # Prompt for any missing keys (optional)
-    if requiredConfigs:
-        for key, default in requiredConfigs.items():
-            if key not in finalConfig:
-                #finalConfig[key] = _prompt_for_value(key, None, default)
-                finalConfig[key] = default
-    return finalConfig
+def _with_schema_defaults(requiredConfigs: Dict[str, Any], configValues: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply non-None schema defaults to missing keys.
+
+    Args:
+        requiredConfigs (Dict[str, Any]): Schema metadata by key.
+        configValues (Dict[str, Any]): Existing config values.
+
+    Returns:
+        Dict[str, Any]: New config dict with schema defaults applied.
+    """
+    resolvedConfig = configValues.copy()
+
+    for key, schema in requiredConfigs.items():
+        if key in resolvedConfig:
+            continue
+
+        defaultValue = schema.get('default')
+        if defaultValue is not None:
+            resolvedConfig[key] = defaultValue
+
+    return resolvedConfig
+
+
+def get_missing_required_keys(requiredConfigs: Dict[str, Any], configValues: Dict[str, Any]) -> list[str]:
+    """Return required keys that still need user input.
+
+    Args:
+        requiredConfigs (Dict[str, Any]): Schema metadata by key.
+        configValues (Dict[str, Any]): Current resolved values.
+
+    Returns:
+        list[str]: Required keys that are unresolved.
+    """
+    missingKeys: list[str] = []
+
+    for key in requiredConfigs:
+        if key not in configValues:
+            missingKeys.append(key)
+            continue
+
+        value = configValues.get(key)
+        if isinstance(value, str) and value == '':
+            missingKeys.append(key)
+
+    return missingKeys
+
+
+def resolve_config_values(operation: str, requiredConfigs: Dict[str, Any],
+                          overrides: Dict[str, Any] | None = None) -> tuple[Dict[str, Any], list[str]]:
+    """Resolve operation config values without prompting.
+
+    Additional info (multi-line): this function is intended for pre-mount
+    planning. It merges YAML values with optional programmatic overrides,
+    applies static schema defaults, and reports unresolved required keys.
+
+    Args:
+        operation (str): Section name in config.yaml.
+        requiredConfigs (Dict[str, Any]): Schema dict for the operation.
+        overrides (Dict[str, Any] | None): Optional in-memory overrides.
+
+    Returns:
+        tuple[Dict[str, Any], list[str]]: Resolved values and unresolved required keys.
+    """
+    configValues = load_config(operation)
+
+    if overrides:
+        configValues.update(overrides)
+
+    resolvedValues = _with_schema_defaults(requiredConfigs, configValues)
+    missingKeys = get_missing_required_keys(requiredConfigs, resolvedValues)
+    return resolvedValues, missingKeys
 
 def _prompt_secure(key: str, prompt: str | None, required: bool, default: str | None = None) -> str:
     """Prompt for secure input (password) using getpass with confirmation.
@@ -298,38 +340,53 @@ def _prompt_secure(key: str, prompt: str | None, required: bool, default: str | 
         print("Error: Passwords do not match. Please try again.")
 
 
-def validate_and_prompt(requiredConfigs: Dict[str, Any], existingConfig: Dict[str, Any]) -> Dict[str, Any]:
+def validate_and_prompt(requiredConfigs: Dict[str, Any], existingConfig: Dict[str, Any],
+                        keysToPrompt: list[str] | None = None,
+                        defaultOverrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Validate config and prompt for missing required values.
+
+    Additional info (multi-line): by default this prompts unresolved required
+    keys. Callers can pass a specific key list and optional per-key dynamic
+    defaults (for example values read from a mounted target OS).
 
     Args:
         requiredConfigs (Dict[str, Any]): Schema defining required configs.
         existingConfig (Dict[str, Any]): Already loaded/provided configs.
+        keysToPrompt (list[str] | None): Optional explicit keys to prompt.
+        defaultOverrides (Dict[str, Any] | None): Optional per-key runtime defaults.
 
     Returns:
         Dict[str, Any]: Complete validated config dict.
     """
-    finalConfig = existingConfig.copy()
+    finalConfig = _with_schema_defaults(requiredConfigs, existingConfig)
+    dynamicDefaults = defaultOverrides or {}
 
-    for key, schema in requiredConfigs.items():
-        # Skip if already have value (and it's not 'Ask')
-        currentValue = finalConfig.get(key)
-        if currentValue is not None and currentValue != '' and str(currentValue).lower() != 'ask':
+    keysToProcess = keysToPrompt if keysToPrompt is not None else get_missing_required_keys(requiredConfigs, finalConfig)
+
+    for key in keysToProcess:
+        schema = requiredConfigs.get(key)
+        if not schema:
             continue
 
         # Get schema metadata
         typeName = schema.get('type', 'str')
-        default = schema.get('default')
+        default = dynamicDefaults.get(key, schema.get('default'))
         prompt = schema.get('prompt')
         secure = schema.get('secure', False)
 
-        # Determine if required (None default means required)
-        required = (default is None)
+        # Keys selected for prompting are required for completion.
+        required = True
 
         # Prompt user
         if secure:
             value = _prompt_secure(key, prompt, required, default)
         else:
-            value = _prompt_for_value(key, typeName, default, prompt)
+            while True:
+                value = _prompt_for_value(key, typeName, default, prompt)
+                if required and value == '':
+                    print(f"Error: {key} is required.")
+                    continue
+                break
 
         finalConfig[key] = value
 
@@ -354,23 +411,14 @@ def load_and_validate_config(operation: str, requiredConfigs: Dict[str, Any],
 
     Example:
         REQUIRED_CONFIGS = {
-            'hostname': {'type': 'str', 'prompt': 'Enter hostname', 'default': None},
+            'hostname': {'type': 'str', 'prompt': 'Enter hostname'},
             'password': {'type': 'str', 'prompt': 'Enter password', 'secure': True}
         }
 
         configs = load_and_validate_config('hostname', REQUIRED_CONFIGS)
     """
-    # Load from YAML hierarchy (already handles all file merging)
-    yamlConfig = load_config(operation, requiredConfigs)
-
-    # Apply programmatic overrides if provided (for tests, CLI args, etc.)
-    if overrides:
-        yamlConfig.update(overrides)
-
-    # Validate and prompt for any missing required values
-    finalConfig = validate_and_prompt(requiredConfigs, yamlConfig)
-
-    return finalConfig
+    resolvedConfig, missingKeys = resolve_config_values(operation, requiredConfigs, overrides=overrides)
+    return validate_and_prompt(requiredConfigs, resolvedConfig, keysToPrompt=missingKeys)
 
 
 def get_config_value(configs: Optional[Dict[str, Any]], key: str, default: Any) -> Any:

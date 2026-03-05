@@ -9,6 +9,45 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: Integration Runner (safe)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/integration/run_tests.py",
+            "args": ["--mode", "safe"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Pytest: Current Test File (unit/mock)",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-m", "not integration", "${file}"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Pytest: Single Test Under Cursor",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["${file}::${selectedText}", "-v"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

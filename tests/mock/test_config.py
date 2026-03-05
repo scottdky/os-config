@@ -106,21 +106,46 @@ def test_config_override_hierarchy(clean_env):
     assert section["common_val"] == "root"
 
 
-def test_config_prompt_mock(monkeypatch):
-    """Test prompting behavior with mocks."""
-    monkeypatch.setattr('builtins.input', lambda _: "user_input")
+def test_load_config_returns_yaml_values(monkeypatch):
+    """Test that load_config returns YAML values without prompting."""
+
+    def mock_input(_):
+        raise RuntimeError("Input should not be called")
+
+    monkeypatch.setattr('builtins.input', mock_input)
 
     test_config_data = {
         "op1": {
-            "key1": "Ask",
+            "key1": "provided",
             "key2": "default"
         }
     }
 
     with patch("lib.config._load_and_merge_configs", return_value=test_config_data):
         res = config.load_config("op1")
-        assert res["key1"] == "user_input"
+        assert res["key1"] == "provided"
         assert res["key2"] == "default"
+
+
+def test_resolve_config_values_reports_missing_required_keys():
+    """Test pre-prompt resolution and missing-key detection."""
+    required_configs = {
+        "hostname": {"type": "str", "prompt": "Enter hostname"},
+        "username": {"type": "str", "prompt": "Enter username"},
+        "locale": {"type": "str", "default": "en_US.UTF-8"},
+    }
+    test_config_data = {
+        "op_resolve": {
+            "hostname": "my-host"
+        }
+    }
+
+    with patch("lib.config._load_and_merge_configs", return_value=test_config_data):
+        values, missing = config.resolve_config_values("op_resolve", required_configs)
+
+    assert values["hostname"] == "my-host"
+    assert values["locale"] == "en_US.UTF-8"
+    assert missing == ["username"]
 
 
 def test_config_null_no_prompt(monkeypatch):

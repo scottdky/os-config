@@ -38,8 +38,8 @@ Usage:
 Configuration:
     Add to config.yaml:
     region:
-        locale: en_US.UTF-8       # or "Ask" to prompt
-        timezone: US/Pacific      # or "Ask" to prompt
+        locale: en_US.UTF-8       # if missing, prompt when region operation runs
+        timezone: US/Pacific      # if missing, prompt when region operation runs
 
 References:
     https://serverfault.com/questions/362903/how-do-you-set-a-locale-non-interactively-on-debian-ubuntu
