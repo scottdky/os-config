@@ -23,14 +23,14 @@ YAML value rules (per operation section):
 Resolution flow:
         1) ``resolve_config_values``: load YAML + apply static defaults + report
              missing keys (no prompting).
-        2) ``validate_and_prompt``: prompt unresolved keys, optionally with runtime
-             ``defaultOverrides`` (for example current target OS hostname).
+    2) Operation layer prompts unresolved keys (``OperationBase.prompt_missing_values``).
 """
 
+from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-import os
-import glob
+from yaml.parser import ParserError
+from yaml.scanner import ScannerError
 
 CONFIG_FILE = 'config.yaml'
 
@@ -55,11 +55,17 @@ def _parse_bool(s: str) -> bool:
     if n in BOOL_FALSE: return False
     raise ValueError(f"expected boolean (true/yes/on/1 or false/no/off/0), got '{s}'")
 
+def _parse_int(s: str) -> int:
+    return int(str(s).strip())
+
+def _parse_float(s: str) -> float:
+    return float(str(s).strip())
+
 CASTERS = {
     "bool": _parse_bool,
-    "int": lambda s: int(str(s).strip()),
-    "float": lambda s: float(str(s).strip()),
-    "str": lambda s: str(s),
+    "int": _parse_int,
+    "float": _parse_float,
+    "str": str,
 }
 
 def _cast_value(value: str, typeName: Optional[str]) -> Any:
@@ -100,65 +106,29 @@ def _cast_value(value: str, typeName: Optional[str]) -> Any:
     except ValueError:
         return value
 
-def _prompt_for_value(key: str, typeName: Optional[str] = None, default: Optional[str] = None, prompt: Optional[str] = None) -> Any:
-    """Prompt the user for a value for a given key.
-
-    If a default value is provided, it will be shown in the prompt. In that case,
-    if the user presses Enter without typing anything, the default value will be used.
-
-    Args:
-        key (str): The key for which the value is being requested.
-        prompt (Optional[str]): Custom prompt message. Can use {default} placeholder.
-        default (Optional[str]): Default value to use if the user does not provide input.
-        description (Optional[str]): Description of the key to be printed before the prompt.
-
-    Returns:
-        Any: The value provided by the user (converted to python type) or the default value if applicable.
-    """
-    if not prompt:
-        prompt = f'Enter value for "{key}"' + (f' [default={default}]' if default is not None else '') + ': '
-    else:
-        # Inject default value into custom prompt string using {default} placeholder
-        prompt = prompt.format(default=default if default is not None else '')
-        if not prompt.endswith(': '):
-            prompt += ': '
-
-    try:
-        value = input(prompt)
-    except EOFError:
-        # Handle non-interactive environments by returning default or empty string
-        value = ""
-
-    if value == "" and default is not None:
-        return default
-    return _cast_value(value, typeName)
-
 def _get_project_root() -> str:
     """Returns the absolute path to the project root."""
     # This file is in lib/config.py, so root is parent of parent
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return str(Path(__file__).resolve().parents[1])
 
 def _find_config_files() -> list[str]:
     """Finds all config.yaml files in core, plugins, and root, sorted by depth (deepest first)."""
-    root = _get_project_root()
-    patterns = [
-        os.path.join(root, "core", "**", CONFIG_FILE),
-        os.path.join(root, "plugins", "**", CONFIG_FILE),
-        # Also direct children of core/plugins in case glob behavior varies
-        os.path.join(root, "core", CONFIG_FILE),
-        os.path.join(root, "plugins", CONFIG_FILE),
-        os.path.join(root, CONFIG_FILE)
-    ]
+    rootPath = Path(_get_project_root())
+    foundFiles: list[Path] = []
 
-    found_files: list[str] = []
-    for p in patterns:
-        found_files.extend(glob.glob(p, recursive=True))
+    for searchRoot in (rootPath / 'core', rootPath / 'plugins'):
+        if searchRoot.exists():
+            foundFiles.extend(searchRoot.rglob(CONFIG_FILE))
+
+    rootConfig = rootPath / CONFIG_FILE
+    if rootConfig.exists():
+        foundFiles.append(rootConfig)
 
     # Deduplicate and sort by depth descending (deepest first)
     # Deeper files are loaded first, then overwritten by shallower files (higher in tree)
-    unique_files = list(set(os.path.abspath(f) for f in found_files))
-    unique_files.sort(key=lambda f: f.count(os.sep), reverse=True)
-    return unique_files
+    uniqueFiles = {f.resolve() for f in foundFiles}
+    sortedFiles = sorted(uniqueFiles, key=lambda f: len(f.parts), reverse=True)
+    return [str(path) for path in sortedFiles]
 
 def _deep_merge(base: Dict[str, Any], update: Dict[str, Any]) -> None:
     """Recursively merge update dict into base dict. Returns nothing, modifies base in place."""
@@ -190,7 +160,7 @@ def _load_and_merge_configs() -> Dict[str, Any]:
                 # 2. Shallow file: {a: 2} -> _deep_merge({a: 1}, {a: 2}) -> final_config = {a: 2}
                 # Correct.
                 _deep_merge(final_config, data)
-        except Exception as e:
+        except (OSError, ParserError, ScannerError) as e:
             print(f"Warning: Failed to load config file {fpath}: {e}")
 
     return final_config
@@ -289,137 +259,6 @@ def resolve_config_values(operation: str, requiredConfigs: Dict[str, Any],
     resolvedValues = _with_schema_defaults(requiredConfigs, configValues)
     missingKeys = get_missing_required_keys(requiredConfigs, resolvedValues)
     return resolvedValues, missingKeys
-
-def _prompt_secure(key: str, prompt: str | None, required: bool, default: str | None = None) -> str:
-    """Prompt for secure input (password) using getpass with confirmation.
-
-    Additional info (multi-line): prompts the user twice to enter the password
-    and validates that both entries match. This prevents typos from being locked in.
-
-    Args:
-        key (str): The key name (for error messages).
-        prompt (str | None): Custom prompt message. Can use {default} placeholder.
-        required (bool): Whether the value is required.
-        default (str | None): Default value (for prompt display only, not recommended for passwords).
-
-    Returns:
-        str: The password entered by the user.
-    """
-    import getpass
-
-    if not prompt:
-        prompt = f'Enter {key}'
-    else:
-        # Inject default value into custom prompt string using {default} placeholder
-        prompt = prompt.format(default=default if default is not None else '')
-
-    if not prompt.endswith(': '):
-        prompt += ': '
-
-    confirmPrompt = f'Confirm {key}: '
-
-    while True:
-        value = getpass.getpass(prompt)
-
-        # If not required and user pressed Enter, allow empty
-        if not value and not required:
-            return value
-
-        # If required and empty, error and retry
-        if not value and required:
-            print(f"Error: {key} is required.")
-            continue
-
-        # Ask for confirmation
-        confirm = getpass.getpass(confirmPrompt)
-
-        # Check if they match
-        if value == confirm:
-            return value
-
-        print("Error: Passwords do not match. Please try again.")
-
-
-def validate_and_prompt(requiredConfigs: Dict[str, Any], existingConfig: Dict[str, Any],
-                        keysToPrompt: list[str] | None = None,
-                        defaultOverrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    """Validate config and prompt for missing required values.
-
-    Additional info (multi-line): by default this prompts unresolved required
-    keys. Callers can pass a specific key list and optional per-key dynamic
-    defaults (for example values read from a mounted target OS).
-
-    Args:
-        requiredConfigs (Dict[str, Any]): Schema defining required configs.
-        existingConfig (Dict[str, Any]): Already loaded/provided configs.
-        keysToPrompt (list[str] | None): Optional explicit keys to prompt.
-        defaultOverrides (Dict[str, Any] | None): Optional per-key runtime defaults.
-
-    Returns:
-        Dict[str, Any]: Complete validated config dict.
-    """
-    finalConfig = _with_schema_defaults(requiredConfigs, existingConfig)
-    dynamicDefaults = defaultOverrides or {}
-
-    keysToProcess = keysToPrompt if keysToPrompt is not None else get_missing_required_keys(requiredConfigs, finalConfig)
-
-    for key in keysToProcess:
-        schema = requiredConfigs.get(key)
-        if not schema:
-            continue
-
-        # Get schema metadata
-        typeName = schema.get('type', 'str')
-        default = dynamicDefaults.get(key, schema.get('default'))
-        prompt = schema.get('prompt')
-        secure = schema.get('secure', False)
-
-        # Keys selected for prompting are required for completion.
-        required = True
-
-        # Prompt user
-        if secure:
-            value = _prompt_secure(key, prompt, required, default)
-        else:
-            while True:
-                value = _prompt_for_value(key, typeName, default, prompt)
-                if required and value == '':
-                    print(f"Error: {key} is required.")
-                    continue
-                break
-
-        finalConfig[key] = value
-
-    return finalConfig
-
-
-def load_and_validate_config(operation: str, requiredConfigs: Dict[str, Any],
-                             overrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    """Load configuration from YAML hierarchy and validate/prompt for missing values.
-
-    Additional info (multi-line): this is the main entry point for modules to get
-    their complete configuration. It loads from the YAML hierarchy, applies any
-    programmatic overrides, and prompts for missing required values.
-
-    Args:
-        operation (str): Section name in config.yaml (e.g., 'hostname', 'network').
-        requiredConfigs (Dict[str, Any]): Schema dict defining what configs are needed.
-        overrides (Dict[str, Any] | None): Optional programmatic overrides (for tests/CLI args).
-
-    Returns:
-        Dict[str, Any]: Complete validated configuration dict.
-
-    Example:
-        REQUIRED_CONFIGS = {
-            'hostname': {'type': 'str', 'prompt': 'Enter hostname'},
-            'password': {'type': 'str', 'prompt': 'Enter password', 'secure': True}
-        }
-
-        configs = load_and_validate_config('hostname', REQUIRED_CONFIGS)
-    """
-    resolvedConfig, missingKeys = resolve_config_values(operation, requiredConfigs, overrides=overrides)
-    return validate_and_prompt(requiredConfigs, resolvedConfig, keysToPrompt=missingKeys)
-
 
 def get_config_value(configs: Optional[Dict[str, Any]], key: str, default: Any) -> Any:
     """Get a configuration value for a specific key.

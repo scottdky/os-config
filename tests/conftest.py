@@ -1,16 +1,17 @@
 """Shared pytest fixtures for all test types."""
 import pytest
-import os
 import sys
+from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture
 def projectRoot():
     """Return the absolute path to the project root."""
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return str(PROJECT_ROOT)
 
 
 def pytest_addoption(parser):

@@ -11,7 +11,6 @@ from types import TracebackType
 
 DEFAULT_MOUNT_PATH = '/tmp/os_image'
 
-
 @dataclass
 class CommandResult:
     """Normalized command execution result.
@@ -29,6 +28,29 @@ class CommandResult:
         yield self.stdout
         yield self.stderr
         yield self.returnCode
+
+
+class CommandExecutionError(RuntimeError):
+    """Raised when a command returns a non-zero exit status.
+
+    Args:
+        command (str): Command that was executed.
+        sudo (bool): Whether command executed with elevated privileges.
+        commandResult (CommandResult): Result payload from command execution.
+        errorPrefix (str | None): Optional context prefix for the message.
+    """
+
+    def __init__(self, command: str, sudo: bool, commandResult: CommandResult, errorPrefix: str | None = None) -> None:
+        stderr = commandResult.stderr.strip()
+        prefix = f'{errorPrefix}: ' if errorPrefix else ''
+        message = (
+            f"{prefix}Command failed (code={commandResult.returnCode}, sudo={sudo}): {command}"
+            f"{f'\n{stderr}' if stderr else ''}"
+        )
+        super().__init__(message)
+        self.command = command
+        self.sudo = sudo
+        self.commandResult = commandResult
 
 
 class BaseManager:
@@ -59,6 +81,28 @@ class BaseManager:
             CommandResult: Standardized command output and exit status.
         """
         raise NotImplementedError
+
+    def run_or_raise(self, command: str, sudo: bool = False, errorPrefix: str | None = None) -> CommandResult:
+        """Execute a command and raise when the exit status is non-zero.
+
+        Additional info (multi-line): this provides a concise exception-style
+        flow for operation code that otherwise repeats return-code checks.
+
+        Args:
+            command (str): Command to execute.
+            sudo (bool): Whether to run with elevated privileges.
+            errorPrefix (str | None): Optional message prefix for raised errors.
+
+        Returns:
+            CommandResult: Successful command result.
+
+        Raises:
+            CommandExecutionError: Command returned a non-zero exit status.
+        """
+        commandResult = self.run(command, sudo=sudo)
+        if commandResult.returnCode != 0:
+            raise CommandExecutionError(command, sudo, commandResult, errorPrefix)
+        return commandResult
 
     def exists(self, remotePath: str) -> bool:
         """Check if file/directory exists"""
@@ -228,8 +272,33 @@ class BaseManager:
             if os.path.exists(tempPath):
                 os.remove(tempPath)
 
+    # def run_raspi_config_cmd(self, funcName: str, settingValue: str) -> CommandResult:
+    #     """
+    #     Run target raspi-config nonint function, with project fallback support
+
+    #     Additional info (multi-line): Prefers `/usr/bin/raspi-config` in the target OS.
+    #     If unavailable, sources the project fallback script at `lib/raspi_config` and
+    #     calls the same function name there.
+
+    #     Args:
+    #         mgr (BaseManager): Manager instance for command execution.
+    #         funcName (str): raspi-config function name (for example, `do_change_timezone`).
+    #         settingValue (str): Value passed to the function.
+
+    #     Returns:
+    #         CommandResult: Result from target raspi-config or fallback command.
+    #     """
+    #     # hasRaspiConfig = self.run("test -x /usr/bin/raspi-config", sudo=True)
+    #     # if hasRaspiConfig.returnCode == 0:
+    #     #     command = f"raspi-config nonint {funcName} {shlex.quote(settingValue)}"
+    #     #     return self.run(command, sudo=True)
+
+    #     scriptPath = Path(__file__).resolve().parents[1] / 'raspi-config'
+    #     fallbackInner = f"source {shlex.quote(str(scriptPath))} && {funcName} {shlex.quote(settingValue)}"
+    #     return self._run_local(f"bash -lc {shlex.quote(fallbackInner)}", sudo=True)
+
     def _run_local(self, command: str, sudo: bool = False,
-                   allowInteractiveSudo: bool | None = None) -> CommandResult:
+                allowInteractiveSudo: bool | None = None) -> CommandResult:
         """Run a shell command on the host system."""
         def _exec(commandArgs: list[str]) -> CommandResult:
             result = subprocess.run(commandArgs, capture_output=True, text=True, check=False)
@@ -359,4 +428,4 @@ class BaseManager:
         self.close()
 
 
-__all__ = ['DEFAULT_MOUNT_PATH', 'CommandResult', 'BaseManager']
+__all__ = ['DEFAULT_MOUNT_PATH', 'CommandResult', 'CommandExecutionError', 'BaseManager']

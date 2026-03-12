@@ -1,5 +1,4 @@
-#CMD: region - Set locale and timezone
-
+#!/usr/bin/env python3
 """
 Set locale and timezone on localhost, remote SSH, or ARM images/SD cards.
 
@@ -9,31 +8,19 @@ This module follows a two-phase architecture:
 
 Usage:
     # Standalone - run as script (supports: all, locale, timezone)
-    python region.py              # All operations (default)
+    python region.py              # Interactive operation menu
     python region.py locale       # Only set locale
     python region.py timezone     # Only set timezone
 
     # Programmatic - single operation
     from lib.managers import create_manager
-    from lib.config import load_and_validate_config
-    from core import region
+    from core.region import LocaleOperation
 
-    configs = load_and_validate_config('region', region.REQUIRED_CONFIGS)
     with create_manager('ssh', hostName='192.168.1.100', userName='pi') as mgr:
-        if configs.get('locale'):
-            region.set_locale(mgr, configs['locale'])
-        if configs.get('timezone'):
-            region.set_timezone(mgr, configs['timezone'])
+        LocaleOperation().execute(mgr)
 
     # Orchestrated - multiple operations
-    # See example_master_script.py for full pattern
-    region_cfg = load_and_validate_config('region', region.REQUIRED_CONFIGS)
-    hostname_cfg = load_and_validate_config('hostname', hostname.REQUIRED_CONFIGS)
-    with create_manager('chroot', autoMount=True, imagePath='/dev/sdb') as mgr:
-        if region_cfg.get('locale'):
-            region.set_locale(mgr, region_cfg['locale'])
-        if hostname_cfg.get('hostname'):
-            hostname.set_host(mgr, hostname_cfg['hostname'])
+    # See example_master_script.py for full operation-based pattern.
 
 Configuration:
     Add to config.yaml:
@@ -44,193 +31,262 @@ Configuration:
 References:
     https://serverfault.com/questions/362903/how-do-you-set-a-locale-non-interactively-on-debian-ubuntu
 """
-import os
 import sys
-import argparse
+import shlex
+from pathlib import Path
+from typing import Any
 
 # pylint: disable=wrong-import-position
 # Ensure project root is in sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
-from lib.managers import BaseManager, interactive_create_manager
-from lib.config import load_and_validate_config
+sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
+from lib.managers import BaseManager, CommandExecutionError
+from lib.operations import OperationBase, OperationPipeline
 # pylint: enable=wrong-import-position
 
-# Available locales and timezones
-AVAILABLE_LOCALES = [
-    'en_US.UTF-8',
-    'en_GB.UTF-8',
-    'en_CA.UTF-8',
-    'en_AU.UTF-8',
-]
+class TimezoneOperation(OperationBase):
+    """Single operation class for timezone configuration."""
+    # Source: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+    AVAILABLE_TIMEZONES = {
+        'US/Alaska':  'America/Anchorage',   # -09:00  -08:00
+        'US/Aleutian': 'America/Adak',       # -10:00  -09:00
+        'US/Arizona': 'America/Phoenix',     # -07:00  -07:00
+        'US/Central': 'America/Chicago',     # -06:00  -05:00
+        'US/Eastern': 'America/New_York',    # -05:00  -04:00
+        'US/East-Indiana': 'America/Indiana/Indianapolis',   # -05:00  -04:00
+        'US/Hawaii': 'Pacific/Honolulu',      # -10:00  -10:00
+        'US/Indiana-Starke': 'America/Indiana/Knox', # -06:00  -05:00
+        'US/Michigan': 'America/Detroit',    # -05:00  -04:00
+        'US/Mountain': 'America/Denver',     # -07:00  -06:00
+        'US/Pacific': 'America/Los_Angeles', # -08:00  -07:00
+    }
 
-# Source: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-AVAILABLE_TIMEZONES = [
-    'US/Alaska',         # -09:00  -08:00  Link to America/Anchorage
-    'US/Aleutian',       # -10:00  -09:00  Link to America/Adak
-    'US/Arizona',        # -07:00  -07:00  Link to America/Phoenix
-    'US/Central',        # -06:00  -05:00  Link to America/Chicago
-    'US/Eastern',        # -05:00  -04:00  Link to America/New_York
-    'US/East-Indiana',   # -05:00  -04:00  Link to America/Indiana/Indianapolis
-    'US/Hawaii',         # -10:00  -10:00  Link to Pacific/Honolulu
-    'US/Indiana-Starke', # -06:00  -05:00  Link to America/Indiana/Knox
-    'US/Michigan',       # -05:00  -04:00  Link to America/Detroit
-    'US/Mountain',       # -07:00  -06:00  Link to America/Denver
-    'US/Pacific',        # -08:00  -07:00  Link to America/Los_Angeles
-]
+    TIMEZONE = 'timezone'
 
-# Configuration schema for this module
-REQUIRED_CONFIGS = {
-    'locale': {
+    REQUIRED_CONFIGS = {
+            'type': 'str',
+            'prompt': 'Choose timezone (press Enter to keep default: {default})',
+    }
+
+    def __init__(self) -> None:
+        requiredConfigs: dict[str, dict[str, Any]] = {self.TIMEZONE: self.REQUIRED_CONFIGS}
+        super().__init__(moduleName='region', name=self.TIMEZONE, requiredConfigs=requiredConfigs)
+
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+        """Prompt user to select a timezone if missing from config.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            configsToPrompt (dict[str, Any]): Unresolved keys to prompt.
+
+        Returns:
+            dict[str, Any]: Prompted values for unresolved keys.
+        """
+        currTz = self.get_current_timezone(mgr)
+        choices = list(self.AVAILABLE_TIMEZONES.keys())
+        choices.append('Other')
+        sel = self.prompt_menu_value(self.REQUIRED_CONFIGS['prompt'], choices, currTz)
+        if sel == len(choices) - 1:  # 'Other' selected
+            tz = input('Enter custom timezone (e.g., "Europe/London"): ').strip()
+        elif sel >= 0:
+            selectedTz = choices[sel]
+            tz = self.AVAILABLE_TIMEZONES[selectedTz]
+        else:
+            tz = None
+        return {self.TIMEZONE: tz if tz else currTz}
+
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+        """Apply timezone operation using existing region implementation.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            configs (dict[str, Any]): Resolved config values.
+
+        Returns:
+            bool: True if timezone changed.
+        """
+        newTimezone = configs.get(self.TIMEZONE)
+        if not newTimezone:
+            return False
+        return self.set_timezone(mgr, newTimezone)
+
+    @staticmethod
+    def get_current_timezone(mgr: BaseManager) -> str:
+        """Get current timezone from target system.
+
+        Args:
+            mgr (BaseManager): Manager instance for command execution.
+
+        Returns:
+            str: Current timezone (for example, `America/Chicago`) or empty string.
+        """
+        timezoneResult = mgr.run('cat /etc/timezone', sudo=True)
+        if timezoneResult.returnCode == 0:
+            return timezoneResult.stdout.strip()
+        return ''
+
+    @staticmethod
+    def set_timezone(mgr: BaseManager, newTimezone: str) -> bool:
+        """Set the system timezone.
+
+        Args:
+            mgr (BaseManager): Manager instance for command execution.
+            newTimezone (str): The timezone to set (e.g., 'US/Pacific').
+
+        Returns:
+            bool: True if timezone was changed, False if already set or on error.
+        """
+        # Validate timezone exists
+        tzPath = f'/usr/share/zoneinfo/{newTimezone}'
+        _, _, tzCheckCode = mgr.run(f'test -f {tzPath}', sudo=True)
+        if tzCheckCode != 0:
+            print(f"Timezone {newTimezone} not found at {tzPath}")
+            return False
+
+        currentTz = TimezoneOperation.get_current_timezone(mgr)
+
+        if currentTz == newTimezone:
+            print(f"Timezone is already set to {newTimezone}, no change needed.")
+            return False
+
+        try:
+            mgr.run_or_raise(f'echo {shlex.quote(newTimezone)} > /etc/timezone', sudo=True, errorPrefix='Failed to set /etc/timezone')
+            mgr.run_or_raise(f'ln -snf {shlex.quote(tzPath)} /etc/localtime', sudo=True, errorPrefix='Failed to update /etc/localtime symlink')
+        except CommandExecutionError as e:
+            print(str(e))
+            return False
+
+        print(f"Timezone changed from {currentTz} to {newTimezone}")
+        return True
+
+
+
+
+class LocaleOperation(OperationBase):
+    # Available locales and timezones
+    AVAILABLE_LOCALES = [
+        'en_US.UTF-8',
+        'en_GB.UTF-8',
+        'en_CA.UTF-8',
+        'en_AU.UTF-8',
+    ]
+
+    LOCALE = 'locale'
+    REQUIRED_CONFIGS = {
         'type': 'str',
         'prompt': 'Enter locale (press Enter to keep default: {default})',
-        'default': 'en_US.UTF-8',  # None = optional (will skip if empty)
-    },
-    'timezone': {
-        'type': 'str',
-        'prompt': 'Enter timezone (press Enter to keep default: {default})',
-        'default': 'US/Central',  # None = optional (will skip if empty)
-    },
-}
+        # 'default': 'en_US.UTF-8',  # None = optional (will skip if empty)
+    }
+
+    def __init__(self) -> None:
+        requiredConfigs: dict[str, dict[str, Any]] = {self.LOCALE: self.REQUIRED_CONFIGS}
+        super().__init__(moduleName='region', name=self.LOCALE, requiredConfigs=requiredConfigs)
+
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+        """Prompt user to select a timezone if missing from config.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            configsToPrompt (dict[str, Any]): Unresolved keys to prompt.
+
+        Returns:
+            dict[str, Any]: Prompted values for unresolved keys.
+        """
+        currLocale = self.get_current_locale(mgr)
+        sel = self.prompt_menu_value(self.REQUIRED_CONFIGS['prompt'], self.AVAILABLE_LOCALES, currLocale)
+        if sel == len(self.AVAILABLE_LOCALES) - 1:  # 'Other' selected
+            locale = input('Enter custom locale (e.g., "en_GB.UTF-8"): ').strip()
+        elif sel >= 0:
+            locale = self.AVAILABLE_LOCALES[sel]
+        else:
+            locale = None
+        return {self.LOCALE: locale if locale else currLocale}
+
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+        """Apply locale operation using existing region implementation.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            configs (dict[str, Any]): Resolved config values.
+
+        Returns:
+            bool: True if locale changed.
+        """
+        newLocale = configs.get(self.LOCALE)
+        if not newLocale:
+            return False
+        return self.set_locale(mgr, newLocale)
 
 
-def set_locale(mgr: BaseManager, newLocale: str) -> bool:
-    """Set the system locale.
+    @staticmethod
+    def get_current_locale(mgr: BaseManager) -> str:
+        """Get current locale from target system using file-first source of truth.
 
-    Args:
-        mgr (BaseManager): Manager instance for command execution.
-        newLocale (str): The locale to set (e.g., 'en_US.UTF-8').
+        Additional info (multi-line): Reads persistent target config first and only
+        falls back to runtime command output when config files are unavailable.
 
-    Returns:
-        bool: True if locale was changed, False if already set or on error.
-    """
-    configPath = '/etc/locale.gen'
+        Args:
+            mgr (BaseManager): Manager instance for command execution.
 
-    # Validate locale exists in /usr/share/i18n/SUPPORTED
-    validateCmd = f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED"
-    _, _, validateCode = mgr.run(validateCmd, sudo=True)
-    if validateCode != 0:
-        print(f"Locale {newLocale} not found in /usr/share/i18n/SUPPORTED")
-        return False
+        Returns:
+            str: Current locale (for example, `en_GB.UTF-8`) or empty string.
+        """
+        localeFileResult = mgr.run("grep '^LANG=' /etc/default/locale | cut -d= -f2", sudo=True)
+        if localeFileResult.returnCode == 0 and localeFileResult.stdout.strip():
+            return localeFileResult.stdout.strip().strip('"')
 
-    # Check if already set as primary locale
-    currentLocale, _, _ = mgr.run("locale | grep LANG= | cut -d= -f2", sudo=True)
-    currentLocale = currentLocale.strip().strip('"')
+        localeConfResult = mgr.run("grep '^LANG=' /etc/locale.conf | cut -d= -f2", sudo=True)
+        if localeConfResult.returnCode == 0 and localeConfResult.stdout.strip():
+            return localeConfResult.stdout.strip().strip('"')
 
-    if currentLocale == newLocale:
-        print(f"Locale is already set to {newLocale}, no change needed.")
-        return False
+        return ''
 
-    # Read current locale.gen
-    existingContent, _, _ = mgr.run(f'cat {configPath}', sudo=True)
-    lines = existingContent.splitlines()
+    @staticmethod
+    def set_locale(mgr: BaseManager, newLocale: str) -> bool:
+        """Set the system locale.
 
-    # Comment out ALL existing uncommented locales (raspi_config approach)
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        # Skip already commented lines and empty lines
-        if stripped.startswith('#') or not stripped:
-            continue
-        # Comment out any active locale lines
-        if ' UTF-8' in line or '.UTF-8' in line:
-            lines[i] = f'# {line}'
+        Args:
+            mgr (BaseManager): Manager instance for command execution.
+            newLocale (str): The locale to set (e.g., 'en_US.UTF-8').
 
-    # Uncomment the target locale
-    modified = False
-    for i, line in enumerate(lines):
-        # Match pattern: "# en_US.UTF-8 UTF-8" or "# en_US.UTF-8"
-        if line.strip().startswith(f'# {newLocale}'):
-            lines[i] = line.replace('# ', '', 1)
-            modified = True
-            break
+        Returns:
+            bool: True if locale was changed, False if already set or on error.
+        """
+        currentLocale = LocaleOperation.get_current_locale(mgr)
+        if currentLocale == newLocale:
+            print(f"Locale is already set to {newLocale}, no change needed.")
+            return False
 
-    if not modified:
-        print(f"Locale {newLocale} not found in {configPath}")
-        return False
+        localeLineResult = mgr.run(f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED", sudo=True)
+        localeLine = localeLineResult.stdout.strip()
+        if localeLineResult.returnCode != 0 or not localeLine:
+            print(f"Locale {newLocale} not found in /usr/share/i18n/SUPPORTED")
+            return False
 
-    # Write modified content back
-    newContent = '\n'.join(lines) + '\n'
-    mgr.write_file(configPath, newContent, sudo=True)
+        newLang = localeLine.split()[0]
 
-    # Regenerate locales and update system (raspi_config approach)
-    mgr.run('locale-gen', sudo=True)
-    mgr.run(f'update-locale --no-checks LANG={newLocale}', sudo=True)
-    mgr.run(f'update-locale --no-checks LC_ALL={newLocale}', sudo=True)
-    mgr.run(f'update-locale --no-checks LANGUAGE={newLocale}', sudo=True)
-
-    print(f"Locale set to {newLocale}")
-    return True
+        try:
+            mgr.run_or_raise(
+                "if [ -L /etc/locale.gen ] && [ \"$(readlink /etc/locale.gen)\" = \"/usr/share/i18n/SUPPORTED\" ]; then rm -f /etc/locale.gen; fi",
+                sudo=True, errorPrefix='Failed to prepare /etc/locale.gen')
+            mgr.run_or_raise(
+                f"printf '%s\\n' {shlex.quote(localeLine)} > /etc/locale.gen", sudo=True, errorPrefix='Failed to write /etc/locale.gen')
+            mgr.run_or_raise(f'locale-gen {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to generate locale')
+            mgr.run_or_raise('update-locale --no-checks LANG', sudo=True, errorPrefix='Failed to clear LANG')
+            mgr.run_or_raise(f'update-locale --no-checks LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set LANG')
+        except CommandExecutionError as e:
+            print(str(e))
+            return False
 
 
-def set_timezone(mgr: BaseManager, newTimezone: str) -> bool:
-    """Set the system timezone.
+        updatedLocale = LocaleOperation.get_current_locale(mgr)
+        if updatedLocale and updatedLocale != newLocale:
+            print(f"Locale verification mismatch: expected {newLocale}, got {updatedLocale}")
+            return False
 
-    Args:
-        mgr (BaseManager): Manager instance for command execution.
-        newTimezone (str): The timezone to set (e.g., 'US/Pacific').
-
-    Returns:
-        bool: True if timezone was changed, False if already set or on error.
-    """
-    # Validate timezone exists
-    tzPath = f'/usr/share/zoneinfo/{newTimezone}'
-    _, _, tzCheckCode = mgr.run(f'test -f {tzPath}', sudo=True)
-    if tzCheckCode != 0:
-        print(f"Timezone {newTimezone} not found at {tzPath}")
-        return False
-
-    # Get current timezone
-    currentTz, _, _ = mgr.run('cat /etc/timezone', sudo=True)
-    currentTz = currentTz.strip()
-
-    if currentTz == newTimezone:
-        print(f"Timezone is already set to {newTimezone}, no change needed.")
-        return False
-
-    # Set new timezone (raspi_config approach)
-    mgr.run(f"echo '{newTimezone}' > /etc/timezone", sudo=True)
-    mgr.run('dpkg-reconfigure -f noninteractive tzdata', sudo=True)
-
-    print(f"Timezone changed from {currentTz} to {newTimezone}")
-    return True
-
+        print(f"Locale set to {newLocale}")
+        return True
 
 if __name__ == '__main__':
-    """Run interactively when executed as a script."""
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Configure system locale and timezone')
-    parser.add_argument('operation', nargs='?', default='all',
-                       choices=['locale', 'timezone', 'all'],
-                       help='Operation to perform (default: all)')
-    args = parser.parse_args()
-
-    # Determine which configs to query based on operation
-    if args.operation == 'all':
-        configsToQuery = REQUIRED_CONFIGS
-    else:
-        # Only query the specific config needed
-        configsToQuery = {args.operation: REQUIRED_CONFIGS[args.operation]}
-
-    # Load configuration from YAML and prompt for missing values
-    allConfigs = load_and_validate_config('region', configsToQuery)
-
-    # Create and execute with manager
-    manager = interactive_create_manager()
-    if manager:
-        with manager:
-            changed = False
-
-            # Execute based on operation
-            if args.operation in ('locale', 'all') and allConfigs.get('locale'):
-                changed |= set_locale(manager, allConfigs['locale'])
-
-            if args.operation in ('timezone', 'all') and allConfigs.get('timezone'):
-                changed |= set_timezone(manager, allConfigs['timezone'])
-
-            if changed:
-                print('...Done\n')
-            else:
-                print('No changes made.')
-    else:
-        print("No manager selected. Exiting.")
-
-
+    pipeline = OperationPipeline([TimezoneOperation(), LocaleOperation()])
+    res = pipeline.run_cli('Configure system timezone and locale')
+    sys.exit()

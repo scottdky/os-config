@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from types import TracebackType
 
 from .base import BaseManager, CommandResult, DEFAULT_MOUNT_PATH
@@ -28,10 +29,8 @@ class BaseImageManager(BaseManager):
         self._hackApplied = False
         self._qemuStaticBinary = 'qemu-arm-static'
         self.defaultChrootUser = defaultChrootUser
-        managersDir = os.path.dirname(os.path.abspath(__file__))
-        libDir = os.path.dirname(managersDir)
-        projectRoot = os.path.dirname(libDir)
-        self._scriptDir = os.path.join(projectRoot, 'os')
+        projectRoot = Path(__file__).resolve().parents[2]
+        self._scriptDir = str(projectRoot / 'os')
 
         sudoCheckResult = self.validate_sudo()
         if sudoCheckResult.returnCode != 0:

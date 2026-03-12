@@ -4,22 +4,21 @@ Pure Python implementation using paramiko instead of Fabric
 """
 import os
 import sys
-import paramiko
 from pathlib import Path
 
 # Ensure project root is in sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # PROJECT_ROOT
+sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 
 from lib.managers import interactive_create_manager
 
 # Updated bash.py implementation
-BASEPATH = os.path.dirname(os.path.abspath(__file__)) # PROJECT_ROOT/core
+BASE_PATH = Path(__file__).resolve().parent # PROJECT_ROOT/core
 
 def reload_aliases(ssh):
-    ssh.put(os.path.join(BASEPATH, 'bash_aliases.txt'), '.bash_aliascore')
+    ssh.put(str(BASE_PATH / 'bash_aliases.txt'), '.bash_aliascore')
 
 def reload_cdargs(ssh):
-    ssh.put(os.path.join(BASEPATH, 'cdarg_list.txt'), '.cdargs')
+    ssh.put(str(BASE_PATH / 'cdarg_list.txt'), '.cdargs')
 
 def install_aliases(ssh):
     s = ['', 'if [ -f ~/.bash_aliascore ]; then', '  . ~/.bash_aliascore', 'fi # endif .bash_aliascore']
@@ -49,11 +48,11 @@ def reload(ssh):
 
 
 if __name__ == "__main__":
-
-    from lib.managers import interactive_create_manager
-    with interactive_create_manager() as mgr:
-        res, _, _ = mgr.run('hostname')
-        print(f"Connected to: {res.strip()}")
+    manager = interactive_create_manager()
+    if manager:
+        with manager as mgr:
+            hostResult = mgr.run('hostname')
+            print(f"Connected to: {hostResult.stdout.strip()}")
 
     # import argparse
 

@@ -1,7 +1,7 @@
 """Manager package for incremental cmd_manager modularization."""
 
 from .util import get_user_selection
-from .base import BaseManager, CommandResult, DEFAULT_MOUNT_PATH
+from .base import BaseManager, CommandResult, CommandExecutionError, DEFAULT_MOUNT_PATH
 from .local import LocalManager
 from .remote import SSHManager
 from .image import BaseImageManager, ImageFileManager, SDCardManager
@@ -11,6 +11,7 @@ __all__ = [
     'get_user_selection',
     'BaseManager',
     'CommandResult',
+    'CommandExecutionError',
     'DEFAULT_MOUNT_PATH',
     'LocalManager',
     'SSHManager',
