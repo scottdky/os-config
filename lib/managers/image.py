@@ -12,7 +12,7 @@ from pathlib import Path
 from types import TracebackType
 
 from .base import BaseManager, CommandResult, DEFAULT_MOUNT_PATH
-from .util import get_user_selection
+from .util import get_single_selection
 
 
 class BaseImageManager(BaseManager):
@@ -596,13 +596,13 @@ class SDCardManager(BaseImageManager):
             options.append(option)
             print(f"{i}. {option}")
 
-        selectedIdx = get_user_selection(options, title="Select USB device:", addExit="Abort (back to main menu)")
+        selectedIdx = get_single_selection(options, title="Select USB device:", addExit="Abort (back to main menu)")
         if selectedIdx is None:
             return None
 
         selectedDevice = devices[selectedIdx]
         print(f"\nSelected: {selectedDevice['device']} - {selectedDevice['size']} {selectedDevice['vendor']} {selectedDevice['model']}")
-        confirmedIdx = get_user_selection(["No (back to main menu)", "Yes"], title="Confirm device selection?", addExit=False)
+        confirmedIdx = get_single_selection(["No (back to main menu)", "Yes"], title="Confirm device selection?", addExit=False)
         if confirmedIdx != 1:
             return None
 

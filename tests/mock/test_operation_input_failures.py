@@ -63,7 +63,7 @@ def test_run_cli_exits_when_operation_menu_cancelled(monkeypatch):
     pipeline = OperationPipeline(operations=[_PromptInputOperation()], managerFactory=_DummyManager)
 
     monkeypatch.setattr(argparse.ArgumentParser, 'parse_args', lambda self: argparse.Namespace(operation=None))
-    monkeypatch.setattr(operationsModule, 'get_user_selection', lambda choices, prompt, isMulti=False: None)
+    monkeypatch.setattr(operationsModule, 'get_single_selection', lambda choices, prompt, addExit='Exit': None)
 
     report = pipeline.run_cli('prompt failure test')
 

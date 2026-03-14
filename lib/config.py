@@ -165,6 +165,15 @@ def _load_and_merge_configs() -> Dict[str, Any]:
 
     return final_config
 
+
+def load_merged_config() -> Dict[str, Any]:
+    """Load and return the fully merged configuration tree.
+
+    Returns:
+        Dict[str, Any]: Merged config values from all discovered config files.
+    """
+    return _load_and_merge_configs()
+
 def load_config(operation: str, requiredConfigs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Load merged YAML configuration for one operation section.
 

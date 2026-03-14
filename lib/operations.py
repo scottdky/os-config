@@ -13,7 +13,7 @@ from typing import Any
 sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 
 from lib.config import resolve_config_values
-from lib.managers import BaseManager, get_user_selection, interactive_create_manager
+from lib.managers import BaseManager, get_single_selection, interactive_create_manager
 
 
 @dataclass
@@ -238,7 +238,7 @@ class OperationBase(ABC):
     def prompt_menu_value(prompt: str, choices: list[str], defaultValue: str = '') -> int:
         """Prompt for a value using menu selection."""
         prompt = OperationBase._get_prompt_text(prompt, defaultValue)
-        sel = get_user_selection(choices, prompt, False)
+        sel = get_single_selection(choices, prompt, False)
         return sel if sel is not None else -1
 
 
@@ -274,7 +274,7 @@ class OperationPipeline:
 
         selectedOperation = args.operation
         if selectedOperation is None:
-            selectedIdx = get_user_selection(choices, 'Select operation to perform:')
+            selectedIdx = get_single_selection(choices, 'Select operation to perform:')
             if selectedIdx is None:
                 print('No operation selected. Exiting.')
                 return OperationRunReport(records=[], selectedOperation='')
@@ -370,4 +370,4 @@ class OperationPipeline:
                 print(f'  error:    {err}')
 
 
-__all__ = ['OperationLogRecord', 'OperationRunReport', 'OperationBase', 'OperationPipeline', 'get_user_selection']
+__all__ = ['OperationLogRecord', 'OperationRunReport', 'OperationBase', 'OperationPipeline']

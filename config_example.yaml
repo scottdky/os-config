@@ -1,6 +1,11 @@
 plugins:
   - /path/to/my/plugin
 
+orchestrations:
+  base_setup:
+    hostname: [hostname, username]
+    region: [timezone, locale]
+
 install:
   - bash_util
 

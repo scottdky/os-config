@@ -3,7 +3,7 @@
 from .base import BaseManager, DEFAULT_MOUNT_PATH
 from .image import ImageFileManager, SDCardManager
 from .local import LocalManager
-from .util import get_user_selection
+from .util import get_single_selection
 from .remote import SSHManager
 
 
@@ -30,7 +30,7 @@ def interactive_create_manager() -> BaseManager | None:
     options = ["Local (localhost)", "SSH (Remote)", "Image File", "SD Card"]
 
     while True:
-        selectedModeIdx = get_user_selection(options, title="Select Manager Mode")
+        selectedModeIdx = get_single_selection(options, title="Select Manager Mode")
         if selectedModeIdx is None:
             print("Exiting manager selection.")
             return None
@@ -62,7 +62,7 @@ def interactive_create_manager() -> BaseManager | None:
 
         if selectedModeIdx == 3:
             print("\n--- SD Card Configuration ---")
-            sdCardSelectionModeIdx = get_user_selection(
+            sdCardSelectionModeIdx = get_single_selection(
                 ["Auto-detect USB devices", "Enter device path manually"],
                 title="SD Card Selection",
                 addExit="Back to main menu"

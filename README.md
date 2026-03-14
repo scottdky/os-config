@@ -85,3 +85,52 @@ network:
 ```
 
 Result: `wifi_ssid` is "MyHomeNetwork", and `wifi_password` is `None`.
+
+## Cross-Module Orchestration CLI
+
+Use the project-level orchestration runner:
+
+```bash
+python install.py
+```
+
+This CLI:
+- Loads merged config from `core/**/config.yaml`, `plugins/**/config.yaml`, and root `config.yaml`
+- Dynamically discovers available operations from `OperationBase` subclasses under `core` and `plugins`
+- Lists orchestration names defined in config
+- Provides a `custom (manual operation selection)` option to select multiple operations interactively
+- Runs two phases: gather all required configs first, then execute all selected operations
+
+Custom selection behavior:
+- In custom multi-select mode, press Enter with no selected operations to return to the main menu.
+
+Discovery notes:
+- New operation classes are discovered automatically if they subclass `OperationBase` and support no-arg construction.
+- Duplicate operation keys (`moduleName.name`) are rejected at startup with a clear error.
+
+### Orchestration YAML Shapes
+
+Preferred shape:
+
+```yaml
+orchestrations:
+    genSetup:
+        hostname: [hostname, username]
+        region: [timezone]
+```
+
+Shorthand shape (also supported):
+
+```yaml
+genSetup:
+    - hostname:
+            - hostname
+            - username
+    - region:
+            - timezone
+```
+
+Validation rules:
+- If `orchestrations` exists, it must be a mapping.
+- Each module entry in an explicit orchestration must map to a non-empty string or non-empty list of strings.
+- Invalid explicit orchestration entries fail fast with a `ValueError` that includes orchestration/module context.

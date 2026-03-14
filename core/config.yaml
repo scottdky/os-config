@@ -47,3 +47,8 @@ rtc:
 #     wifi_ssid: MyNetworkName
 #     # wifi_password omitted -> prompted when required by selected operation
 #     dhcp: True
+
+orchestrations:
+  basic_pi:
+    hostname: [hostname, password]
+    region: [timezone, locale]

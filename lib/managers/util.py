@@ -3,8 +3,8 @@
 from typing import cast
 
 
-def get_user_selection(options: list[str], title: str = 'Select operation', addExit: str | bool = 'Exit') -> int | None:
-    """Prompt user to select an option from a terminal menu.
+def get_single_selection(options: list[str], title: str = 'Select operation', addExit: str | bool = 'Exit') -> int | None:
+    """Prompt user to select one option from a terminal menu.
 
     Args:
         options (list[str]): List of options to display.
@@ -13,9 +13,10 @@ def get_user_selection(options: list[str], title: str = 'Select operation', addE
             False to disable, or True/'Exit' for standard exit behavior.
 
     Returns:
-        int | None: Index of selected option from `options`, or None if cancelled/exit chosen.
+        int | None: Selected index from `options`, or None if cancelled/exit chosen.
     """
     menuOptions = options.copy()
+
     if addExit is True:
         addExit = 'Exit'
     if addExit:
@@ -32,3 +33,29 @@ def get_user_selection(options: list[str], title: str = 'Select operation', addE
         return None
 
     return menuEntryIndex
+
+
+def get_multi_selection(options: list[str], title: str = 'Select operations') -> list[int] | None:
+    """Prompt user to select multiple options from a terminal menu.
+
+    Args:
+        options (list[str]): List of options to display.
+        title (str): Title for the selection menu.
+
+    Returns:
+        list[int] | None: Selected indices, or None if cancelled.
+    """
+    import simple_term_menu
+    menuClass = simple_term_menu.TerminalMenu
+
+    menu = menuClass(
+        options,
+        title=title,
+        multi_select=True,
+        multi_select_empty_ok=True,
+        multi_select_select_on_accept=False,
+    )
+    selectedIndicesRaw = cast(list[int] | tuple[int, ...] | None, menu.show())
+    if selectedIndicesRaw is None:
+        return None
+    return list(selectedIndicesRaw)
