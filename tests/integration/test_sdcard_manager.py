@@ -3,14 +3,51 @@
 By default, integration runs only safe loopback tests. Real-device tests are
 enabled only when --use-real-device is provided.
 """
+import json
 import pytest
 import os
-import sys
 import subprocess
+import sys
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from lib.managers import SDCardManager
+
+
+def _read_partitions_for_device(devicePath: str) -> dict[str, str]:
+    """Read root/boot partition paths from lsblk JSON for a device."""
+    result = subprocess.run(
+        ["lsblk", "--json", "-o", "NAME,FSTYPE", devicePath],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {}
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+    partitions: dict[str, str] = {}
+    blockDevices = data.get("blockdevices") or []
+    if not blockDevices:
+        return partitions
+
+    children = blockDevices[0].get("children") or []
+    for partition in children:
+        partName = partition.get("name")
+        fsType = partition.get("fstype")
+        if not partName:
+            continue
+        partPath = f"/dev/{partName}"
+        if fsType == "ext4" and "root" not in partitions:
+            partitions["root"] = partPath
+        if fsType in {"vfat", "fat16", "fat32"} and "boot" not in partitions:
+            partitions["boot"] = partPath
+
+    return partitions
 
 
 @pytest.mark.integration
@@ -19,62 +56,46 @@ from lib.managers import SDCardManager
 class TestSDCardManagerIntegration:
     """Integration tests for SDCardManager."""
 
-    def test_loopback_mount(self, checkSudo, testImagePath, tempMountDir, cleanupMounts):
+    def test_loopback_mount(self, checkSudo, testImagePath, tempMountDir, cleanupMounts, loopDeviceFromImage, isMountActive):
         """Test SD card manager with loopback device (safe for CI)."""
+        _ = checkSudo
         if testImagePath is None:
             pytest.skip("No test image available. Run: tests/integration/setup_test_env.sh")
 
-        # Create loop device from test image
-        result = subprocess.run(
-            ["sudo", "losetup", "-f", "--show", "-P", testImagePath],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        loopDev = result.stdout.strip()
+        loopDev = loopDeviceFromImage(testImagePath)
         cleanupMounts(tempMountDir)
-
-        try:
-            # Test SDCardManager with loop device
-            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir)
-
-            # Detect partitions
-            partitions = mgr._detect_partitions()
-            assert "root" in partitions
-
-            # Auto-mounted in constructor
-
-            # Verify mounted
-            with open("/proc/mounts", "r") as f:
-                mounts = f.read()
-                assert tempMountDir in mounts
-
-            # Unmount
-            mgr.close()
-
-        finally:
-            # Cleanup loop device
-            subprocess.run(["sudo", "losetup", "-d", loopDev], check=False)
-
-    def test_partition_detection(self, checkSudo, testImagePath, tempMountDir):
-        """Test partition detection on loopback device."""
-        if testImagePath is None:
-            pytest.skip("No test image available")
-
-        # Create loop device
-        result = subprocess.run(
-            ["sudo", "losetup", "-f", "--show", "-P", testImagePath],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        loopDev = result.stdout.strip()
 
         mgr = None
         try:
             mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir)
 
-            partitions = mgr._detect_partitions()
+            # Detect partitions via lsblk
+            partitions = _read_partitions_for_device(loopDev)
+            assert "root" in partitions
+
+            # Verify mounted
+            assert isMountActive(tempMountDir)
+
+            # Unmount
+            mgr.close()
+
+        finally:
+            if mgr is not None:
+                mgr.close()
+
+    def test_partition_detection(self, checkSudo, testImagePath, tempMountDir, loopDeviceFromImage):
+        """Test partition detection on loopback device."""
+        _ = checkSudo
+        if testImagePath is None:
+            pytest.skip("No test image available")
+
+        loopDev = loopDeviceFromImage(testImagePath)
+
+        mgr = None
+        try:
+            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir)
+
+            partitions = _read_partitions_for_device(loopDev)
 
             # Should detect at least root partition
             assert "root" in partitions
@@ -87,7 +108,6 @@ class TestSDCardManagerIntegration:
         finally:
             if mgr is not None:
                 mgr.close()
-            subprocess.run(["sudo", "losetup", "-d", loopDev], check=False)
 
 
 @pytest.mark.integration
@@ -98,6 +118,7 @@ class TestRealSDCard:
 
     def test_real_device_detection(self, checkSudo, realDevice, tempMountDir, cleanupMounts):
         """Test partition detection and mounting with real SD card."""
+        _ = checkSudo
         if realDevice is None:
             pytest.skip("No real device specified. Use: --use-real-device or --use-real-device=/dev/sdX")
 
@@ -125,12 +146,12 @@ class TestRealSDCard:
             mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir)
 
             # Detect partitions
-            partitions = mgr._detect_partitions()
+            partitions = _read_partitions_for_device(realDevice)
             assert "root" in partitions
 
             # Verify mounted
             assert os.path.exists(tempMountDir)
-            with open("/proc/mounts", "r") as f:
+            with open("/proc/mounts", "r", encoding="utf-8") as f:
                 mounts = f.read()
                 assert tempMountDir in mounts
 
@@ -143,13 +164,14 @@ class TestRealSDCard:
 
     def test_real_device_naming(self, checkSudo, realDevice, tempMountDir):
         """Test partition detection returns paths on real device."""
+        _ = checkSudo
         if realDevice is None:
             pytest.skip("No real device specified. Use: --use-real-device or --use-real-device=/dev/sdX")
 
         mgr = None
         try:
             mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir)
-            partitions = mgr._detect_partitions()
+            partitions = _read_partitions_for_device(realDevice)
             assert "root" in partitions
             assert partitions["root"].startswith(realDevice)
         finally:

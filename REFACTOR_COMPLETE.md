@@ -179,7 +179,6 @@ with create_manager('sdcard', devicePath='/dev/sdb') as mgr:
 ### Parameters Kept
 
 - `mountPath` - Where to mount (default: `/mnt/image`)
-- `forceUnmount` - Force-kill processes before unmounting
 - `keepMounted` - Keep mounts active after manager close (for debugging/workflow continuity)
 - `defaultChrootUser` - Run non-sudo chroot commands as a non-root user
 

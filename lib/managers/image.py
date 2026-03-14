@@ -18,13 +18,12 @@ from .util import get_single_selection
 class BaseImageManager(BaseManager):
     """Abstract base class for ARM image management via chroot with QEMU emulation."""
 
-    def __init__(self, mountPath: str = DEFAULT_MOUNT_PATH, forceUnmount: bool = False,
+    def __init__(self, mountPath: str = DEFAULT_MOUNT_PATH,
                  allowInteractiveSudo: bool = True, defaultChrootUser: str | None = None,
                  keepMounted: bool = False) -> None:
         super().__init__(allowInteractiveSudo=allowInteractiveSudo)
         self.mountPath = mountPath
         self._mountedByUs = {}
-        self._forceUnmount = forceUnmount
         self.keepMounted = keepMounted
         self._hackApplied = False
         self._qemuStaticBinary = 'qemu-arm-static'
@@ -49,10 +48,10 @@ class BaseImageManager(BaseManager):
             f'chroot {userspecArg}{shlex.quote(self.mountPath)} '
             f'/usr/bin/{self._qemuStaticBinary} /bin/bash -lc {shlex.quote(command)}'
         )
-        stdout, stderr, code = self._run_local(chrootCmd, sudo=True)
-        if code != 0:
-            print(f"Error: {stderr}")
-        return CommandResult(stdout, stderr, code)
+        commandResult = self._run_local(chrootCmd, sudo=True)
+        if commandResult.returnCode != 0:
+            print(f"Error: {commandResult.stderr}")
+        return commandResult
 
     def exists(self, remotePath: str) -> bool:
         if remotePath.startswith('/'):
@@ -89,17 +88,15 @@ class BaseImageManager(BaseManager):
     def _perform_mount(self) -> None:
         raise NotImplementedError("Subclasses must implement _perform_mount()")
 
-    def _perform_unmount(self) -> None:
-        self._run_unmount_script(forceUnmount=self._forceUnmount)
+    def _perform_unmount(self, forceUnmount: bool = False) -> CommandResult:
+        return self._run_unmount_script(forceUnmount=forceUnmount)
 
-    def _run_unmount_script(self, forceUnmount: bool) -> None:
+    def _run_unmount_script(self, forceUnmount: bool = False) -> CommandResult:
         scriptPath = os.path.join(self._scriptDir, 'unmnt_image.sh')
         forceFlag = ' force' if forceUnmount else ''
-        _, stderr, code = self._run_local(
+        return self._run_local(
             f'bash {shlex.quote(scriptPath)} {shlex.quote(self.mountPath)}{forceFlag}'
         )
-        if code != 0:
-            print(f"Warning: Unmount script errors: {stderr}")
 
     def _apply_ldpreload_hack(self) -> None:
         try:
@@ -206,14 +203,69 @@ class BaseImageManager(BaseManager):
         return False
 
     def _unmount(self) -> None:
-        try:
-            self._undo_ldpreload_hack()
-            self._perform_unmount()
+        self._undo_ldpreload_hack()
+
+        if self._attempt_unmount(forceUnmount=False):
+            return
+
+        if not self._supports_interactive_unmount_prompt():
+            print(
+                f"Warning: Failed to unmount {self.mountPath}. "
+                "Resolve active usages and rerun cleanup manually."
+            )
+            return
+
+        self._prompt_and_retry_unmount()
+
+    def _attempt_unmount(self, forceUnmount: bool = False) -> bool:
+        """Attempt one unmount pass and return whether mount is no longer active."""
+        unmountResult = self._perform_unmount(forceUnmount=forceUnmount)
+        isStillMounted = self._is_mount_active()
+        if not isStillMounted:
             print(f"Unmounted: {self.mountPath}")
             self._mountedByUs.clear()
-        except Exception as e:
-            print(f"Error during unmount: {e}")
-            raise
+            return True
+
+        mode = 'force' if forceUnmount else 'normal'
+        stderrText = unmountResult.stderr.strip()
+        if stderrText:
+            print(f"Warning: {mode} unmount failed for {self.mountPath}: {stderrText}")
+        else:
+            print(f"Warning: {mode} unmount failed for {self.mountPath}.")
+        return False
+
+    @staticmethod
+    def _supports_interactive_unmount_prompt() -> bool:
+        """Return True when stdin/stdout are interactive terminals."""
+        return sys.stdin.isatty() and sys.stdout.isatty()
+
+    def _prompt_and_retry_unmount(self) -> None:
+        """Prompt user through retry/force/exit choices after unmount failure."""
+        print(
+            "Resolve processes/files using the mount path, then press Enter to retry unmount."
+        )
+
+        while True:
+            input('Press Enter to retry unmount...')
+            if self._attempt_unmount(forceUnmount=False):
+                return
+
+            actionIdx = get_single_selection(
+                ['Try again', 'Force unmount', 'Exit without unmounting'],
+                title='Unmount still failed. Choose next action:',
+                addExit=False,
+            )
+
+            if actionIdx == 0:
+                continue
+
+            if actionIdx == 1:
+                if self._attempt_unmount(forceUnmount=True):
+                    return
+                continue
+
+            print(f"Leaving mount active at {self.mountPath}.")
+            return
 
 
 class ImageFileManager(BaseImageManager):
@@ -225,13 +277,12 @@ class ImageFileManager(BaseImageManager):
     FIXTURE_PATH_FRAGMENT = os.path.normpath('tests/integration/fixtures')
 
     def __init__(self, imagePath: str, mountPath: str = DEFAULT_MOUNT_PATH,
-                 forceUnmount: bool = False, allowInteractiveSudo: bool = True,
+                 allowInteractiveSudo: bool = True,
                  defaultChrootUser: str | None = None, keepMounted: bool = False) -> None:
         self.imagePath = imagePath
         self._stagedImagePath = None
         super().__init__(
             mountPath=mountPath,
-            forceUnmount=forceUnmount,
             allowInteractiveSudo=allowInteractiveSudo,
             defaultChrootUser=defaultChrootUser,
             keepMounted=keepMounted,
@@ -251,6 +302,15 @@ class ImageFileManager(BaseImageManager):
             raise ValueError(f"Not a regular file: {self.imagePath}")
 
     def _perform_mount(self) -> None:
+        existingTargetMount = self._find_existing_mount_at_target_path()
+        if existingTargetMount:
+            print(f"Mount path already active at: {existingTargetMount}")
+            print("Reusing existing mount path (will not unmount on cleanup)")
+            self.mountPath = existingTargetMount
+            self._mountedByUs = {}
+            self._apply_ldpreload_hack()
+            return
+
         existingMount = self._find_existing_loop_mount()
         if existingMount:
             print(f"Image already loop-mounted at: {existingMount}")
@@ -261,6 +321,7 @@ class ImageFileManager(BaseImageManager):
             return
 
         imagePathForMount = self._prepare_image_path_for_mount()
+        self._preflight_mountability(imagePathForMount)
         scriptPath = os.path.join(self._scriptDir, 'mnt_image.sh')
         stdout, stderr, code = self._run_local(
             f'bash {shlex.quote(scriptPath)} {shlex.quote(imagePathForMount)} {shlex.quote(self.mountPath)}'
@@ -282,9 +343,23 @@ class ImageFileManager(BaseImageManager):
         self._mountedByUs = {'root': True, 'boot': True}
         self._apply_ldpreload_hack()
 
-    def _perform_unmount(self) -> None:
+    def _find_existing_mount_at_target_path(self) -> str | None:
+        """Return target mount path when already active, otherwise None."""
+        stdout, _, code = self._run_local(
+            f'findmnt -n -o TARGET --target {shlex.quote(self.mountPath)}',
+            sudo=True,
+        )
+        if code != 0:
+            return None
+
+        mountedTarget = stdout.strip().splitlines()[0] if stdout.strip() else ''
+        if os.path.realpath(mountedTarget) == os.path.realpath(self.mountPath):
+            return self.mountPath
+        return None
+
+    def _perform_unmount(self, forceUnmount: bool = False) -> CommandResult:
         try:
-            super()._perform_unmount()
+            return super()._perform_unmount(forceUnmount=forceUnmount)
         finally:
             self._cleanup_staged_image()
 
@@ -352,6 +427,30 @@ class ImageFileManager(BaseImageManager):
         if not fsType:
             return False
         return fsType in self.NETWORK_FILESYSTEM_TYPES or fsType.startswith('fuse.')
+
+    def _preflight_mountability(self, imagePath: str) -> None:
+        """Validate that an image path is mountable before calling mount scripts."""
+        absImagePath = os.path.abspath(imagePath)
+
+        if self._is_network_mounted_path(absImagePath):
+            raise RuntimeError(
+                f"Image is on a network-backed filesystem: {absImagePath}. "
+                "Please place a local copy on a local drive and retry."
+            )
+
+        probeResult = self._run_local(
+            f'losetup -f --show --read-only {shlex.quote(absImagePath)}',
+            sudo=True,
+        )
+
+        loopDevice = probeResult.stdout.strip() if probeResult.returnCode == 0 else ''
+        if not loopDevice:
+            raise RuntimeError(
+                f"Mountability probe failed for image: {absImagePath}. "
+                "Unable to attach loop device. Place the image on a local drive and retry."
+            )
+
+        self._run_local(f'losetup -d {shlex.quote(loopDevice)}', sudo=True)
 
     def _is_in_integration_fixtures(self, path: str) -> bool:
         normalizedPath = os.path.normpath(os.path.abspath(path))
@@ -449,13 +548,11 @@ class SDCardManager(BaseImageManager):
     """Execute operations on a mounted SD card via chroot with QEMU emulation."""
 
     def __init__(self, devicePath: str, mountPath: str = DEFAULT_MOUNT_PATH,
-                 forceUnmount: bool = False, allowInteractiveSudo: bool = True,
+                 allowInteractiveSudo: bool = True,
                  defaultChrootUser: str | None = None, keepMounted: bool = False) -> None:
         self.devicePath = devicePath
-        self._bootMountPath = None
         super().__init__(
             mountPath=mountPath,
-            forceUnmount=forceUnmount,
             allowInteractiveSudo=allowInteractiveSudo,
             defaultChrootUser=defaultChrootUser,
             keepMounted=keepMounted,
@@ -473,47 +570,35 @@ class SDCardManager(BaseImageManager):
         if not partitions.get('root'):
             raise RuntimeError("Could not find root partition (ext4)")
 
-        rootPartition = partitions['root']
-        bootPartition = partitions.get('boot')
-
         if partitions.get('root_mountpoint'):
             print(f"Root partition already mounted at: {partitions['root_mountpoint']}")
             print("Reusing existing mount (will not unmount on cleanup)")
             self.mountPath = partitions['root_mountpoint']
             self._mountedByUs['root'] = False
-        else:
-            mkdirResult = self._ensure_local_directory(self.mountPath, sudo=True)
-            if mkdirResult.returnCode != 0:
-                raise RuntimeError(f"Failed to create mount directory {self.mountPath}: {mkdirResult.stderr}")
-            _, stderr, code = self._run_local(f'mount {rootPartition} {self.mountPath}', sudo=True)
-            if code != 0:
-                raise RuntimeError(f"Failed to mount root partition: {stderr}")
-            print(f"Mounted root: {rootPartition} -> {self.mountPath}")
-            self._mountedByUs['root'] = True
+            self._mountedByUs['boot'] = False
+            self._apply_ldpreload_hack()
+            return
 
-        if bootPartition:
-            self._bootMountPath = os.path.join(self.mountPath, 'boot')
-            if partitions.get('boot_mountpoint'):
-                print(f"Boot partition already mounted at: {partitions['boot_mountpoint']}")
-                self._mountedByUs['boot'] = (partitions['boot_mountpoint'] == self._bootMountPath)
-            else:
-                mkdirResult = self._ensure_local_directory(self._bootMountPath, sudo=True)
-                if mkdirResult.returnCode != 0:
-                    print(f"Warning: Failed to create boot mount directory: {mkdirResult.stderr}")
-                    self._mountedByUs['boot'] = False
-                else:
-                    _, stderr, code = self._run_local(
-                        f'mount {bootPartition} {self._bootMountPath}',
-                        sudo=True
-                    )
-                    if code != 0:
-                        print(f"Warning: Failed to mount boot partition: {stderr}")
-                        self._mountedByUs['boot'] = False
-                    else:
-                        print(f"Mounted boot: {bootPartition} -> {self._bootMountPath}")
-                        self._mountedByUs['boot'] = True
+        scriptPath = os.path.join(self._scriptDir, 'mnt_sdcard.sh')
+        stdout, stderr, code = self._run_local(
+            f'bash {shlex.quote(scriptPath)} {shlex.quote(self.devicePath)} {shlex.quote(self.mountPath)}'
+        )
+        if code != 0:
+            raise RuntimeError(f"Failed to mount SD card: {stderr}")
 
+        _, verifyErr, verifyCode = self._run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
+        if verifyCode != 0:
+            self._run_unmount_script(forceUnmount=True)
+            raise RuntimeError(
+                f"SD card mount verification failed at {self.mountPath}. "
+                f"Script output: {stdout}\n{stderr}\n{verifyErr}"
+            )
+
+        print(f"Mounted SD card: {self.devicePath} -> {self.mountPath}")
+        self._mountedByUs['root'] = True
+        self._mountedByUs['boot'] = bool(partitions.get('boot'))
         self._apply_ldpreload_hack()
+        return
 
     def _detect_partitions(self) -> dict:
         stdout, stderr, code = self._run_local(

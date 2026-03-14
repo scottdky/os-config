@@ -29,8 +29,17 @@ pytest -m "not integration"
 cd tests/integration
 ./run_tests.py
 
+# Explicit safe mode
+./run_tests.py --mode safe
+
+# Include extra pytest arguments (no -- separator required)
+./run_tests.py --mode safe -k mount_and_unmount -vv --maxfail=1
+
 # Or directly with venv python (safest by default: no device, no chroot)
 ../env/bin/python -m pytest -m integration
+
+# Note: in restricted/containerized environments, loopback tests may be skipped
+# if `losetup` is not permitted. This is expected behavior.
 
 # Keep mounts for debugging
 ../env/bin/python -m pytest -m integration --keep-mounted
@@ -49,6 +58,9 @@ cd tests/integration
 
 # Real-device tests with interactive selection + confirmation
 ./run_tests.py --mode device
+
+# Real-device tests with explicit device
+./run_tests.py --mode device --device /dev/sdb
 ```
 
 ### Manual One-by-One Safety Procedures

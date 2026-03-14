@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-from lib.managers import BaseImageManager
+from lib.managers import BaseImageManager, CommandResult
 
 
 class _DummyImageManager(BaseImageManager):
@@ -35,9 +35,11 @@ class TestQemuArchSelection:
         """AArch64 ELF should select qemu-aarch64-static."""
         manager = self._create_manager()
 
-        with mock.patch.object(manager, '_run_local', return_value=(
-            '  Machine:                           AArch64\n', '', 0
-        )):
+        with mock.patch.object(
+            manager,
+            '_run_local',
+            return_value=CommandResult('  Machine:                           AArch64\n', '', 0),
+        ):
             binary = manager._detect_qemu_static_binary()
 
         assert binary == 'qemu-aarch64-static'
@@ -46,9 +48,11 @@ class TestQemuArchSelection:
         """ARM ELF should select qemu-arm-static."""
         manager = self._create_manager()
 
-        with mock.patch.object(manager, '_run_local', return_value=(
-            '  Machine:                           ARM\n', '', 0
-        )):
+        with mock.patch.object(
+            manager,
+            '_run_local',
+            return_value=CommandResult('  Machine:                           ARM\n', '', 0),
+        ):
             binary = manager._detect_qemu_static_binary()
 
         assert binary == 'qemu-arm-static'
@@ -57,7 +61,11 @@ class TestQemuArchSelection:
         """Detection failure should fallback to qemu-arm-static."""
         manager = self._create_manager()
 
-        with mock.patch.object(manager, '_run_local', return_value=('', 'readelf failed', 1)):
+        with mock.patch.object(
+            manager,
+            '_run_local',
+            return_value=CommandResult('', 'readelf failed', 1),
+        ):
             binary = manager._detect_qemu_static_binary()
 
         assert binary == 'qemu-arm-static'
@@ -71,7 +79,7 @@ class TestQemuArchSelection:
 
         def fake_run_local(command: str, sudo: bool = False, allowInteractiveSudo=None):
             capturedCommand['value'] = command
-            return '', '', 0
+            return CommandResult('', '', 0)
 
         with mock.patch.object(manager, '_run_local', side_effect=fake_run_local):
             manager.run('echo ok', sudo=True)

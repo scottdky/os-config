@@ -1,73 +1,95 @@
+#!/usr/bin/env bash
+
 set -euo pipefail
 
 image_path="$1"
 mount_path="$2"
-root_partition="${3:-2}" # default to 2
-boot_partition="1"
+root_partition="${3:-2}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$script_dir/lib_mount_common.sh"
+
+if [[ -z "$image_path" || -z "$mount_path" ]]; then
+        echo "Usage: $0 <image_path> <mount_path> [root_partition_number]"
+        exit 1
+fi
 
 if [[ ! -f "$image_path" ]]; then
         echo "Image file not found: $image_path"
         exit 1
 fi
 
-sudo mkdir -p "$mount_path" "$mount_path/boot" "$mount_path/dev" "$mount_path/dev/pts"
-
 run_unmount_cleanup() {
         "$script_dir/unmnt_image.sh" "$mount_path" force 2>/dev/null || true
 }
 
+resolve_partition_path() {
+        local loopDev="$1"
+        local partitionNumber="$2"
+        local withP="${loopDev}p${partitionNumber}"
+        local withoutP="${loopDev}${partitionNumber}"
+
+        if [[ -b "$withP" ]]; then
+                echo "$withP"
+                return 0
+        fi
+        if [[ -b "$withoutP" ]]; then
+                echo "$withoutP"
+                return 0
+        fi
+        return 1
+}
+
+find_boot_partition() {
+        local loopDev="$1"
+        local bootCandidate=""
+
+        bootCandidate="$(lsblk -nrpo NAME,FSTYPE "$loopDev" | awk '$2 ~ /^(vfat|fat16|fat32)$/ {print $1; exit}')"
+        echo "$bootCandidate"
+}
+
 trap 'run_unmount_cleanup' ERR
 
-# dump the partition table, locate boot partition and root partition
-fdisk_output="$(sfdisk -d "$image_path")"
+require_command findmnt
+require_command losetup
+require_command lsblk
 
-boot_start="$(echo "$fdisk_output" | awk -v part="$image_path$boot_partition" '$1==part {print $4-0}')"
-root_start="$(echo "$fdisk_output" | awk -v part="$image_path$root_partition" '$1==part {print $4-0}')"
+prepare_mount_dirs "$mount_path"
 
-if [[ -z "$root_start" || "$root_start" == "0" ]]; then
-        echo "Could not determine root partition offset for $image_path partition $root_partition"
+loop_dev="$(sudo losetup -f --show -P "$image_path")"
+if [[ -z "$loop_dev" ]]; then
+        echo "Failed to attach loop device for image: $image_path"
         exit 1
 fi
 
-if [[ -z "$boot_start" || "$boot_start" == "0" ]]; then
-        echo "Could not determine boot partition offset for $image_path partition $boot_partition"
+root_partition_path="$(resolve_partition_path "$loop_dev" "$root_partition" || true)"
+if [[ -z "$root_partition_path" ]]; then
+        echo "Could not determine root partition path for loop device $loop_dev partition $root_partition"
         exit 1
 fi
 
-boot_offset="$((boot_start * 512))"
-root_offset="$((root_start * 512))"
+boot_partition_path="$(find_boot_partition "$loop_dev")"
 
-echo "Mounting image $image_path on $mount_path, offset for boot partition is $boot_offset, offset for root partition is $root_offset"
+echo "Mounting image $image_path using loop device $loop_dev"
+echo "Root partition: $root_partition_path"
 
-# mount root and boot partition
-sudo mount -o "loop,offset=$root_offset" "$image_path" "$mount_path"
+sudo mount "$root_partition_path" "$mount_path"
 
-if [[ "$boot_partition" != "$root_partition" ]]; then
-        size_limit="$((root_offset - boot_offset))"
-        if [[ "$size_limit" -le 0 ]]; then
-                echo "Invalid boot sizelimit computed ($size_limit)."
-                run_unmount_cleanup
+if [[ -n "$boot_partition_path" && "$boot_partition_path" != "$root_partition_path" ]]; then
+        echo "Boot partition: $boot_partition_path"
+        sudo mount "$boot_partition_path" "$mount_path/boot"
+fi
+
+bind_system_dirs "$mount_path"
+
+if ! verify_mount_target "$mount_path" "Root"; then
+        exit 1
+fi
+
+if [[ -n "$boot_partition_path" && "$boot_partition_path" != "$root_partition_path" ]]; then
+        if ! verify_mount_target "$mount_path/boot" "Boot"; then
                 exit 1
         fi
-        sudo mount -o "loop,offset=$boot_offset,sizelimit=$size_limit" "$image_path" "$mount_path/boot"
-fi
-
-# bind real /dev to our mounted img /dev
-sudo mount -o bind /dev "$mount_path/dev"
-sudo mount -o bind /dev/pts "$mount_path/dev/pts"
-
-# sanity checks to avoid partial mounts
-if ! findmnt -T "$mount_path" >/dev/null 2>&1; then
-        echo "Root mount verification failed for $mount_path"
-        run_unmount_cleanup
-        exit 1
-fi
-
-if [[ "$boot_partition" != "$root_partition" ]] && ! findmnt -T "$mount_path/boot" >/dev/null 2>&1; then
-        echo "Boot mount verification failed for $mount_path/boot"
-        run_unmount_cleanup
-        exit 1
 fi
 
 trap - ERR

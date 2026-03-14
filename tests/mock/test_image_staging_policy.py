@@ -25,7 +25,6 @@ class TestImageStagingPolicy:
         manager = ImageFileManager.__new__(ImageFileManager)
         manager.imagePath = imagePath
         manager._stagedImagePath = None
-        manager._forceUnmount = False
         return manager
 
     def test_local_path_skips_staging(self, tmp_path):
@@ -157,11 +156,10 @@ class TestImageStagingPolicy:
     def test_perform_unmount_delegates_and_cleans_staged_image(self):
         """Image unmount should delegate to script and always cleanup staged copy."""
         manager = self._create_manager('/tmp/source.img')
-        manager._forceUnmount = True
 
         with mock.patch.object(manager, '_run_unmount_script') as unmountMock, \
              mock.patch.object(manager, '_cleanup_staged_image') as cleanupMock:
-            manager._perform_unmount()
+            manager._perform_unmount(forceUnmount=True)
 
         unmountMock.assert_called_once_with(forceUnmount=True)
         cleanupMock.assert_called_once()

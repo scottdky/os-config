@@ -43,7 +43,8 @@ echo
 if [[ "$CHOICE" == "1" ]]; then
     echo "Downloading Raspberry Pi OS Lite..."
 
-    IMAGE_URL="https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2024-03-12/2024-03-12-raspios-bookworm-arm64-lite.img.xz"
+    #IMAGE_URL="https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2024-03-12/2024-03-12-raspios-bookworm-arm64-lite.img.xz"
+    IMAGE_URL="https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2025-12-04/2025-12-04-raspios-trixie-arm64-lite.img.xz"
 
     echo "Downloading from: $IMAGE_URL"
     cd "$FIXTURES_DIR"

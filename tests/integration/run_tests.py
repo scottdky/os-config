@@ -129,7 +129,19 @@ def runDeviceTests(devicePath: str | None, extraArgs: list[str]) -> int:
 
 def parseArgs() -> argparse.Namespace:
     """Parse command-line options."""
-    parser = argparse.ArgumentParser(description="Run integration tests safely")
+    parser = argparse.ArgumentParser(
+        description="Run integration tests safely",
+        epilog=(
+            "Examples:\n"
+            "  ./run_tests.py --mode safe -k mount_and_unmount -vv\n"
+            "  ./run_tests.py --mode non-device --maxfail=1\n"
+            "  ./run_tests.py --mode device --device /dev/sdb -k real_device\n"
+            "  ./run_tests.py --mode menu\n"
+            "\n"
+            "Any unknown arguments are passed through to pytest."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--mode",
         choices=["menu", "safe", "non-device", "device", "detect"],
@@ -141,12 +153,11 @@ def parseArgs() -> argparse.Namespace:
         default=None,
         help="Explicit device path for device mode (e.g., /dev/sdb). If omitted, interactive selection is used."
     )
-    parser.add_argument(
-        "pytestArgs",
-        nargs=argparse.REMAINDER,
-        help="Additional pytest args, pass after --"
-    )
-    return parser.parse_args()
+    args, unknownArgs = parser.parse_known_args()
+    if unknownArgs and unknownArgs[0] == "--":
+        unknownArgs = unknownArgs[1:]
+    setattr(args, "pytestArgs", unknownArgs)
+    return args
 
 
 def main() -> int:

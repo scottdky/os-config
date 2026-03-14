@@ -160,9 +160,14 @@ For `image` and `sdcard` managers:
 Common parameters:
 
 - `mountPath` (default `/mnt/image`)
-- `forceUnmount` (force cleanup on unmount)
 - `keepMounted` (skip automatic unmount)
 - `defaultChrootUser` (non-root chroot user when `sudo=False`)
+
+Unmount behavior:
+
+- managers first attempt a normal unmount on close
+- if unmount is busy in interactive mode, you can retry, force unmount, or exit without unmounting
+- in non-interactive mode, unmount failures are reported and mounts are left active
 
 Target-specific parameters:
 
@@ -174,7 +179,7 @@ Target-specific parameters:
 1. Pass manager objects into functions instead of relying on global Fabric env state.
 2. Prefer context managers (`with`) for reliable cleanup.
 3. Replace any `create_manager('chroot', ...)` calls with explicit `image` or `sdcard` mode.
-4. Keep naming consistent with live kwargs (`mountPath`, `forceUnmount`, `keepMounted`).
+4. Keep naming consistent with live kwargs (`mountPath`, `keepMounted`).
 5. Test each target mode (`local`, `ssh`, `image`, `sdcard`) independently after migration.
 
 ## Prerequisites

@@ -152,3 +152,49 @@ def test_base_image_close_unmounts_when_mount_active_even_if_not_tracked():
     manager.close()
 
     assert unmountCalled['value'] is True
+
+
+def test_base_image_unmount_non_interactive_failure_skips_prompt():
+    """Non-interactive unmount failures should not prompt; mount remains active."""
+    manager = BaseImageManager.__new__(BaseImageManager)
+    manager.mountPath = DEFAULT_MOUNT_PATH
+    manager._mountedByUs = {'root': True}
+    manager._hackApplied = False
+
+    promptCalled = {'value': False}
+
+    manager._undo_ldpreload_hack = lambda: None
+    manager._attempt_unmount = lambda forceUnmount=False: False
+    manager._supports_interactive_unmount_prompt = lambda: False
+
+    def fake_prompt():
+        promptCalled['value'] = True
+
+    manager._prompt_and_retry_unmount = fake_prompt
+
+    manager._unmount()
+
+    assert promptCalled['value'] is False
+
+
+def test_base_image_unmount_interactive_failure_prompts_user_flow():
+    """Interactive unmount failures should enter prompt/retry flow."""
+    manager = BaseImageManager.__new__(BaseImageManager)
+    manager.mountPath = DEFAULT_MOUNT_PATH
+    manager._mountedByUs = {'root': True}
+    manager._hackApplied = False
+
+    promptCalled = {'value': False}
+
+    manager._undo_ldpreload_hack = lambda: None
+    manager._attempt_unmount = lambda forceUnmount=False: False
+    manager._supports_interactive_unmount_prompt = lambda: True
+
+    def fake_prompt():
+        promptCalled['value'] = True
+
+    manager._prompt_and_retry_unmount = fake_prompt
+
+    manager._unmount()
+
+    assert promptCalled['value'] is True

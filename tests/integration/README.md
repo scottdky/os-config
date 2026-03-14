@@ -41,6 +41,33 @@ Interactive menu options in `run_tests.py`:
 - Detect removable devices (no tests)
 - Run real-device integration tests (requires device confirmation)
 
+CLI mode examples:
+```bash
+cd tests/integration
+
+# Safest subset (default in automated workflows)
+./run_tests.py --mode safe
+
+# Non-device full integration (includes chroot-marked tests)
+./run_tests.py --mode non-device
+
+# Detect devices only
+./run_tests.py --mode detect
+
+# Real-device mode with interactive device selection
+./run_tests.py --mode device
+
+# Real-device mode with explicit path
+./run_tests.py --mode device --device /dev/sdb
+```
+
+Passing pytest arguments through `run_tests.py`:
+```bash
+# No "--" required; unknown args are forwarded to pytest
+./run_tests.py --mode safe -k mount_and_unmount -vv --maxfail=1
+./run_tests.py --mode non-device -k chroot_execution -vv
+```
+
 ### Specific Test Files
 
 ```bash
@@ -139,6 +166,13 @@ Check these prerequisites:
 - `sudo -v` succeeds
 - `tests/integration/fixtures/raspios-lite-test.img` exists
 - if running chroot tests: `qemu-arm-static` is installed and `--include-chroot-tests` is provided
+- for chroot command tests: mounted image includes `/bin/bash` (full rootfs image, not partition-only/minimal fixtures)
+
+### "Safe mode shows skips for loopback tests"
+In restricted/containerized environments, `losetup` may be blocked even with sudo.
+When that happens, loopback SD tests are skipped by design instead of failing.
+
+To run those tests, use a host environment with loop-device privileges.
 
 ## Manual One-by-One Procedures (Recommended)
 

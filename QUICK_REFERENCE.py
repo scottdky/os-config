@@ -13,8 +13,6 @@ from lib.managers import (
     create_manager,
     ImageFileManager,
     SDCardManager,
-    LocalManager,
-    SSHManager
 )
 
 # ============================================================================
@@ -135,16 +133,15 @@ with create_manager('ssh', hostName='192.168.1.100', userName='pi') as mgr:
     mgr.run('hostname')
 
 # ============================================================================
-# FORCE UNMOUNT (For Stuck Mounts)
+# UNMOUNT FAILURE HANDLING
 # ============================================================================
 
-# If processes are keeping mount busy, force-kill them before unmounting
-with ImageFileManager(imagePath='/path/to/raspi.img', forceUnmount=True) as mgr:
-    mgr.run('some-command')
-# Will kill processes using mount before unmounting
-
-with SDCardManager(devicePath='/dev/sdb', forceUnmount=True) as mgr:
-    mgr.run('some-command')
+# On exit, managers first attempt a normal unmount.
+# If unmount is busy in interactive mode, the CLI prompts you to:
+#   1) Try again
+#   2) Force unmount
+#   3) Exit without unmounting
+# In non-interactive runs, unmount failures are reported and mounts are left active.
 
 # ============================================================================
 # INTERACTIVE MANAGER CREATION
@@ -182,7 +179,7 @@ with create_manager('sdcard', devicePath='/dev/sdb') as mgr:
 # ============================================================================
 
 # - `autoMount` parameter removed (always auto-mounts or reuses existing)
-# - `keepMounted` parameter removed (smart mount tracking handles this)
+# - `keepMounted` parameter controls whether mounts remain active on close
 # - 'chroot' mode removed (use 'image' or 'sdcard' instead)
 # - Mount state is tracked automatically (only unmounts what was mounted by us)
 # - Loop mount detection for image files (automatic reuse)
