@@ -5,6 +5,7 @@ import argparse
 import getpass
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,64 @@ sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 
 from lib.config import resolve_config_values
 from lib.managers import BaseManager, get_user_selection, interactive_create_manager
+
+
+@dataclass
+class OperationLogRecord:
+    """Structured result for one operation execution.
+
+    Additional info (multi-line): this is the operation-level payload used by
+    the current pipeline and future orchestration/reporting layers.
+
+    Args:
+        operationName (str): Name of the operation that produced this record.
+        changed (bool): Whether the operation changed target state.
+        previousState (Any | None): Value/state before the operation.
+        currentState (Any | None): Value/state after the operation.
+        errors (list[str]): Non-fatal errors captured by the operation.
+        fatal (bool): Whether this record reflects a fatal uncaught exception.
+    """
+    operationName: str
+    changed: bool
+    previousState: Any | None = None
+    currentState: Any | None = None
+    errors: list[str] = field(default_factory=list)
+    fatal: bool = False
+
+    def summary(self) -> str:
+        """Generate a concise summary of this operation record."""
+        if self.fatal:
+            return f"Failed with error: {self.errors[0] if self.errors else 'Unknown error'}"
+        if self.changed:
+            return f"Changed from '{self.previousState}' to '{self.currentState}'"
+        return "No change"
+
+
+@dataclass
+class OperationRunReport:
+    """Aggregate report for one pipeline run.
+
+    Args:
+        records (list[OperationLogRecord]): Operation records in execution order.
+        selectedOperation (str): Operation selected by user or 'all'.
+    """
+    records: list[OperationLogRecord] = field(default_factory=list)
+    selectedOperation: str = ''
+
+    @property
+    def changed(self) -> bool:
+        """Return True when any operation changed target state."""
+        return any(record.changed for record in self.records)
+
+    @property
+    def hasErrors(self) -> bool:
+        """Return True when any operation recorded one or more errors."""
+        return any(record.errors for record in self.records)
+
+    @property
+    def hasFatal(self) -> bool:
+        """Return True when any operation record is marked fatal."""
+        return any(record.fatal for record in self.records)
 
 class OperationBase(ABC):
     """Base class for one concrete operation.
@@ -97,20 +156,41 @@ class OperationBase(ABC):
             joined = ', '.join(missingRequired)
             raise ValueError(f'Missing required config values: {joined}')
 
-    def execute(self, mgr: BaseManager) -> bool:
+    def execute(self, mgr: BaseManager) -> OperationLogRecord:
         """Resolve config then apply this operation.
 
         Args:
             mgr (BaseManager): Active manager instance.
 
         Returns:
-            bool: True if this operation made a change.
+            OperationLogRecord: Structured operation execution record.
         """
         allConfigs = self.gather_config(mgr)
-        return self.apply(mgr, allConfigs)
+        return self.execute_with_config(mgr, allConfigs)
+
+    def execute_with_config(self, mgr: BaseManager, allConfigs: dict[str, Any]) -> OperationLogRecord:
+        """Apply this operation using pre-resolved config.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            allConfigs (dict[str, Any]): Pre-resolved config values.
+
+        Returns:
+            OperationLogRecord: Structured operation execution record.
+        """
+        rawResult = self.apply(mgr, allConfigs)
+        if isinstance(rawResult, OperationLogRecord):
+            result = rawResult
+            if result.operationName == '':
+                result.operationName = self.name
+        else:
+            result = OperationLogRecord(operationName=self.name, changed=bool(rawResult))
+
+        mgr.log_operation(result)
+        return result
 
     @abstractmethod
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord | bool:
         """Apply this operation using resolved config.
 
         Args:
@@ -118,7 +198,11 @@ class OperationBase(ABC):
             configs (dict[str, Any]): Final resolved config values.
 
         Returns:
-            bool: True if any change was made.
+            OperationLogRecord | bool: Structured execution record.
+
+            Additional info (multi-line): bool is temporarily allowed for
+            backward compatibility with operations not yet migrated to
+            `OperationLogRecord`.
         """
         raise NotImplementedError
 
@@ -167,14 +251,14 @@ class OperationPipeline:
         self.operations = operations
         self.managerFactory = managerFactory
 
-    def run_cli(self, parserDescription: str) -> int:
+    def run_cli(self, parserDescription: str) -> OperationRunReport:
         """Run operation selection and execute one or all operations.
 
         Args:
             parserDescription (str): Description shown by argparse help.
 
         Returns:
-            int: Process-style exit code (0 success/no-op, 1 changed).
+            OperationRunReport: Aggregate report for selected operation(s).
         """
         operationNames = [operation.name for operation in self.operations]
         choices = operationNames if len(operationNames) == 1 else [*operationNames, 'all']
@@ -193,27 +277,97 @@ class OperationPipeline:
             selectedIdx = get_user_selection(choices, 'Select operation to perform:')
             if selectedIdx is None:
                 print('No operation selected. Exiting.')
-                return 0
+                return OperationRunReport(records=[], selectedOperation='')
             selectedOperation = choices[selectedIdx]
 
         manager = self.managerFactory()
         if manager is None:
             print('No manager selected. Exiting.')
-            return 0
+            return OperationRunReport(records=[], selectedOperation=selectedOperation)
 
         with manager as mgr:
-            changed = False
-            if selectedOperation == 'all':
-                for operation in self.operations:
-                    changed |= operation.execute(mgr)
-            else:
-                matchingOperation = next((op for op in self.operations if op.name == selectedOperation), None)
-                if matchingOperation is None:
-                    print(f'Unknown operation: {selectedOperation}')
-                    return 0
-                changed = matchingOperation.execute(mgr)
+            mgr.clear_operation_logs()
+            currentOperationName = selectedOperation
+            try:
+                selectedOperations: list[OperationBase] = []
+                if selectedOperation == 'all':
+                    selectedOperations = list(self.operations)
+                else:
+                    matchingOperation = next((op for op in self.operations if op.name == selectedOperation), None)
+                    if matchingOperation is None:
+                        print(f'Unknown operation: {selectedOperation}')
+                        return OperationRunReport(records=[], selectedOperation=selectedOperation)
+                    selectedOperations = [matchingOperation]
 
-            return 1 if changed else 0
+                preparedOperations: list[tuple[OperationBase, dict[str, Any]]] = []
+                for operation in selectedOperations:
+                    currentOperationName = operation.name
+                    preparedConfigs = operation.gather_config(mgr)
+                    preparedOperations.append((operation, preparedConfigs))
+
+                for operation, preparedConfigs in preparedOperations:
+                    currentOperationName = operation.name
+                    operation.execute_with_config(mgr, preparedConfigs)
+            except (Exception, KeyboardInterrupt) as exc:
+                fatalRecord = OperationLogRecord(
+                    operationName=currentOperationName,
+                    changed=False,
+                    previousState=None,
+                    currentState=None,
+                    errors=[str(exc)],
+                    fatal=True,
+                )
+                mgr.log_operation(fatalRecord)
+                report = OperationRunReport(
+                    records=self._collect_log_records(mgr.get_operation_logs()),
+                    selectedOperation=selectedOperation,
+                )
+                self._print_report(report)
+                raise
+
+            report = OperationRunReport(
+                records=self._collect_log_records(mgr.get_operation_logs()),
+                selectedOperation=selectedOperation,
+            )
+            self._print_report(report)
+            return report
+
+    @staticmethod
+    def _collect_log_records(rawLogs: list[Any]) -> list[OperationLogRecord]:
+        """Filter manager logs to OperationLogRecord entries.
+
+        Args:
+            rawLogs (list[Any]): Raw manager operation log entries.
+
+        Returns:
+            list[OperationLogRecord]: Typed operation log records.
+        """
+        return [entry for entry in rawLogs if isinstance(entry, OperationLogRecord)]
+
+    @staticmethod
+    def _print_report(report: OperationRunReport) -> None:
+        """Print a concise summary for operation pipeline execution.
+
+        Args:
+            report (OperationRunReport): Aggregate report to display.
+        """
+        if not report.records:
+            print('No operations executed.')
+            return
+
+        print('\nOperation summary:')
+        for record in report.records:
+            status = 'changed' if record.changed else 'no change'
+            if record.errors:
+                status = f'{status}, errors={len(record.errors)}'
+            if record.fatal:
+                status = f'{status}, fatal'
+            print(f'- {record.operationName}: {status}')
+            if record.previousState is not None or record.currentState is not None:
+                print(f'  previous: {record.previousState}')
+                print(f'  current:  {record.currentState}')
+            for err in record.errors:
+                print(f'  error:    {err}')
 
 
-__all__ = ['OperationBase', 'OperationPipeline', 'get_user_selection']
+__all__ = ['OperationLogRecord', 'OperationRunReport', 'OperationBase', 'OperationPipeline', 'get_user_selection']

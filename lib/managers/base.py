@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from types import TracebackType
+from typing import Any
 
 DEFAULT_MOUNT_PATH = '/tmp/os_image'
 
@@ -64,6 +65,27 @@ class BaseManager:
                 validation may prompt interactively via ``sudo -v``.
         """
         self.allowInteractiveSudo = allowInteractiveSudo
+        self._operationLogs: list[Any] = []
+
+    def log_operation(self, operationRecord: Any) -> None:
+        """Append one operation record to manager-owned operation logs.
+
+        Args:
+            operationRecord (object): Structured operation result payload.
+        """
+        self._operationLogs.append(operationRecord)
+
+    def get_operation_logs(self) -> list[Any]:
+        """Return a shallow copy of accumulated operation logs.
+
+        Returns:
+            list[object]: Operation records in insertion order.
+        """
+        return list(self._operationLogs)
+
+    def clear_operation_logs(self) -> None:
+        """Clear accumulated operation logs for a fresh pipeline run."""
+        self._operationLogs.clear()
 
     def run(self, command: str, sudo: bool = False) -> CommandResult:
         """Execute a command.
@@ -203,7 +225,7 @@ class BaseManager:
                     existing_lines[i] = line
                     modified = True
                     found_commented = True
-                    print(f"Uncommented line in {remotePath}: {line.strip()[:50]}...")
+                    #print(f"Uncommented line in {remotePath}: {line.strip()[:50]}...")
                     break
 
             if found_commented:
@@ -211,7 +233,7 @@ class BaseManager:
 
             existing_lines.append(line)
             modified = True
-            print(f"Appended to {remotePath}: {line.strip()[:50]}...")
+            #print(f"Appended to {remotePath}: {line.strip()[:50]}...")
 
         if modified:
             new_content = '\n'.join(existing_lines) + '\n'
@@ -224,18 +246,18 @@ class BaseManager:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
         else:
-            print(f"No changes made to {remotePath}")
+            pass #print(f"No changes made to {remotePath}")
 
     def sed(self, remotePath: str, before: str, after: str, useRegex: bool = False,
             limit: int = 0, backup: str = '.bak', sudo: bool = False) -> None:
         """Perform in-place search and replace on a file (like sed -i)."""
         if not self.exists(remotePath):
-            print(f"File not found: {remotePath}")
+            #print(f"File not found: {remotePath}")
             return
 
         existing_content = self.read_file(remotePath, sudo=sudo)
         if not existing_content:
-            print(f"Could not read file: {remotePath}")
+            #print(f"Could not read file: {remotePath}")
             return
 
         if useRegex:
@@ -247,7 +269,7 @@ class BaseManager:
                 newContent = existing_content.replace(before, after, limit)
 
         if newContent == existing_content:
-            print(f"No changes made to {remotePath} (pattern not found)")
+            #print(f"No changes made to {remotePath} (pattern not found)")
             return
 
         if backup:
@@ -257,7 +279,7 @@ class BaseManager:
                 with os.fdopen(fd, 'w') as f:
                     f.write(existing_content)
                 self.put(tempBackup, backupPath, sudo=sudo)
-                print(f"Created backup: {backupPath}")
+                #print(f"Created backup: {backupPath}")
             finally:
                 if os.path.exists(tempBackup):
                     os.remove(tempBackup)
@@ -267,7 +289,7 @@ class BaseManager:
             with os.fdopen(fd, 'w') as f:
                 f.write(newContent)
             self.put(tempPath, remotePath, sudo=sudo)
-            print(f"Modified {remotePath}")
+            #print(f"Modified {remotePath}")
         finally:
             if os.path.exists(tempPath):
                 os.remove(tempPath)
@@ -396,7 +418,7 @@ class BaseManager:
                     mkdirResult = self._ensure_local_directory(destDir, sudo=sudo)
                     if mkdirResult.returnCode != 0:
                         context = f" {label}" if label else ''
-                        print(f"Error creating destination directory{context}: {mkdirResult.stderr}")
+                        #print(f"Error creating destination directory{context}: {mkdirResult.stderr}")
                         return
 
             if sudo:
@@ -406,16 +428,17 @@ class BaseManager:
                 )
                 if code != 0:
                     context = f" {label}" if label else ''
-                    print(f"Error copying file{context}: {stderr}")
+                    #print(f"Error copying file{context}: {stderr}")
                     return
             else:
                 shutil.copy2(localPath, destPath)
 
             suffix = f" ({label})" if label else ''
-            print(f"Copied {localPath} -> {remotePath}{suffix}")
+            # print(f"Copied {localPath} -> {remotePath}{suffix}")
         except Exception as e:
             context = f" {label}" if label else ''
-            print(f"Error copying file{context}: {e}")
+            # Return a CommandResult for consistency with other exception handlers
+            return CommandResult('', f"Error copying file{context}: {e}", 1)
 
     def close(self) -> None:
         """Clean up resources"""

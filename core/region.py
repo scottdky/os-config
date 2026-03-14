@@ -40,7 +40,7 @@ from typing import Any
 # Ensure project root is in sys.path
 sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 from lib.managers import BaseManager, CommandExecutionError
-from lib.operations import OperationBase, OperationPipeline
+from lib.operations import OperationBase, OperationLogRecord, OperationPipeline
 # pylint: enable=wrong-import-position
 
 class TimezoneOperation(OperationBase):
@@ -94,7 +94,7 @@ class TimezoneOperation(OperationBase):
             tz = None
         return {self.TIMEZONE: tz if tz else currTz}
 
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
         """Apply timezone operation using existing region implementation.
 
         Args:
@@ -102,12 +102,10 @@ class TimezoneOperation(OperationBase):
             configs (dict[str, Any]): Resolved config values.
 
         Returns:
-            bool: True if timezone changed.
+            OperationLogRecord: Timezone operation record.
         """
-        newTimezone = configs.get(self.TIMEZONE)
-        if not newTimezone:
-            return False
-        return self.set_timezone(mgr, newTimezone)
+        newTimezone = str(configs[self.TIMEZONE])
+        return TimezoneOperation.set_timezone(mgr, newTimezone)
 
     @staticmethod
     def get_current_timezone(mgr: BaseManager) -> str:
@@ -125,7 +123,7 @@ class TimezoneOperation(OperationBase):
         return ''
 
     @staticmethod
-    def set_timezone(mgr: BaseManager, newTimezone: str) -> bool:
+    def set_timezone(mgr: BaseManager, newTimezone: str) -> OperationLogRecord:
         """Set the system timezone.
 
         Args:
@@ -133,30 +131,40 @@ class TimezoneOperation(OperationBase):
             newTimezone (str): The timezone to set (e.g., 'US/Pacific').
 
         Returns:
-            bool: True if timezone was changed, False if already set or on error.
+            OperationLogRecord: Timezone operation record.
         """
+        previousTimezone = TimezoneOperation.get_current_timezone(mgr)
+        currentTimezone = previousTimezone
+        changed = False
+        errors: list[str] = []
+
         # Validate timezone exists
         tzPath = f'/usr/share/zoneinfo/{newTimezone}'
         _, _, tzCheckCode = mgr.run(f'test -f {tzPath}', sudo=True)
         if tzCheckCode != 0:
-            print(f"Timezone {newTimezone} not found at {tzPath}")
-            return False
-
-        currentTz = TimezoneOperation.get_current_timezone(mgr)
-
-        if currentTz == newTimezone:
+            errMsg = f'Timezone {newTimezone} not found at {tzPath}'
+            print(errMsg)
+            errors.append(errMsg)
+        elif previousTimezone == newTimezone:
             print(f"Timezone is already set to {newTimezone}, no change needed.")
-            return False
+        else:
+            try:
+                mgr.run_or_raise(f'echo {shlex.quote(newTimezone)} > /etc/timezone', sudo=True, errorPrefix='Failed to set /etc/timezone')
+                mgr.run_or_raise(f'ln -snf {shlex.quote(tzPath)} /etc/localtime', sudo=True, errorPrefix='Failed to update /etc/localtime symlink')
+            except CommandExecutionError as e:
+                print(str(e))
+                errors.append(str(e))
 
-        try:
-            mgr.run_or_raise(f'echo {shlex.quote(newTimezone)} > /etc/timezone', sudo=True, errorPrefix='Failed to set /etc/timezone')
-            mgr.run_or_raise(f'ln -snf {shlex.quote(tzPath)} /etc/localtime', sudo=True, errorPrefix='Failed to update /etc/localtime symlink')
-        except CommandExecutionError as e:
-            print(str(e))
-            return False
+            currentTimezone = TimezoneOperation.get_current_timezone(mgr)
+            if not errors and currentTimezone == newTimezone:
+                changed = True
+                print(f"Timezone changed from {previousTimezone} to {newTimezone}")
+            elif not errors:
+                errMsg = f'Timezone verification mismatch: expected {newTimezone}, got {currentTimezone}'
+                print(errMsg)
+                errors.append(errMsg)
 
-        print(f"Timezone changed from {currentTz} to {newTimezone}")
-        return True
+        return OperationLogRecord(TimezoneOperation.TIMEZONE, changed, previousTimezone, currentTimezone, errors)
 
 
 
@@ -201,7 +209,7 @@ class LocaleOperation(OperationBase):
             locale = None
         return {self.LOCALE: locale if locale else currLocale}
 
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
         """Apply locale operation using existing region implementation.
 
         Args:
@@ -209,12 +217,10 @@ class LocaleOperation(OperationBase):
             configs (dict[str, Any]): Resolved config values.
 
         Returns:
-            bool: True if locale changed.
+            OperationLogRecord: Locale operation record.
         """
-        newLocale = configs.get(self.LOCALE)
-        if not newLocale:
-            return False
-        return self.set_locale(mgr, newLocale)
+        newLocale = str(configs[self.LOCALE])
+        return LocaleOperation.set_locale(mgr, newLocale)
 
 
     @staticmethod
@@ -241,7 +247,7 @@ class LocaleOperation(OperationBase):
         return ''
 
     @staticmethod
-    def set_locale(mgr: BaseManager, newLocale: str) -> bool:
+    def set_locale(mgr: BaseManager, newLocale: str) -> OperationLogRecord:
         """Set the system locale.
 
         Args:
@@ -249,44 +255,50 @@ class LocaleOperation(OperationBase):
             newLocale (str): The locale to set (e.g., 'en_US.UTF-8').
 
         Returns:
-            bool: True if locale was changed, False if already set or on error.
+            OperationLogRecord: Locale operation record.
         """
-        currentLocale = LocaleOperation.get_current_locale(mgr)
-        if currentLocale == newLocale:
+        previousLocale = LocaleOperation.get_current_locale(mgr)
+        currentLocale = previousLocale
+        changed = False
+        errors: list[str] = []
+
+        if previousLocale == newLocale:
             print(f"Locale is already set to {newLocale}, no change needed.")
-            return False
+        else:
+            localeLineResult = mgr.run(f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED", sudo=True)
+            localeLine = localeLineResult.stdout.strip()
+            if localeLineResult.returnCode != 0 or not localeLine:
+                errMsg = f'Locale {newLocale} not found in /usr/share/i18n/SUPPORTED'
+                print(errMsg)
+                errors.append(errMsg)
+            else:
+                newLang = localeLine.split()[0]
+                try:
+                    mgr.run_or_raise(
+                        "if [ -L /etc/locale.gen ] && [ \"$(readlink /etc/locale.gen)\" = \"/usr/share/i18n/SUPPORTED\" ]; then rm -f /etc/locale.gen; fi",
+                        sudo=True, errorPrefix='Failed to prepare /etc/locale.gen')
+                    mgr.run_or_raise(
+                        f"printf '%s\\n' {shlex.quote(localeLine)} > /etc/locale.gen", sudo=True, errorPrefix='Failed to write /etc/locale.gen')
+                    mgr.run_or_raise(f'locale-gen {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to generate locale')
+                    mgr.run_or_raise('update-locale --no-checks LANG', sudo=True, errorPrefix='Failed to clear LANG')
+                    mgr.run_or_raise(f'update-locale --no-checks LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set LANG')
+                except CommandExecutionError as e:
+                    print(str(e))
+                    errors.append(str(e))
 
-        localeLineResult = mgr.run(f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED", sudo=True)
-        localeLine = localeLineResult.stdout.strip()
-        if localeLineResult.returnCode != 0 or not localeLine:
-            print(f"Locale {newLocale} not found in /usr/share/i18n/SUPPORTED")
-            return False
+            currentLocale = LocaleOperation.get_current_locale(mgr)
+            if not errors:
+                if currentLocale and currentLocale != newLocale:
+                    errMsg = f'Locale verification mismatch: expected {newLocale}, got {currentLocale}'
+                    print(errMsg)
+                    errors.append(errMsg)
+                else:
+                    changed = True
+                    currentLocale = currentLocale if currentLocale else newLocale
+                    print(f"Locale set to {newLocale}")
 
-        newLang = localeLine.split()[0]
-
-        try:
-            mgr.run_or_raise(
-                "if [ -L /etc/locale.gen ] && [ \"$(readlink /etc/locale.gen)\" = \"/usr/share/i18n/SUPPORTED\" ]; then rm -f /etc/locale.gen; fi",
-                sudo=True, errorPrefix='Failed to prepare /etc/locale.gen')
-            mgr.run_or_raise(
-                f"printf '%s\\n' {shlex.quote(localeLine)} > /etc/locale.gen", sudo=True, errorPrefix='Failed to write /etc/locale.gen')
-            mgr.run_or_raise(f'locale-gen {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to generate locale')
-            mgr.run_or_raise('update-locale --no-checks LANG', sudo=True, errorPrefix='Failed to clear LANG')
-            mgr.run_or_raise(f'update-locale --no-checks LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set LANG')
-        except CommandExecutionError as e:
-            print(str(e))
-            return False
-
-
-        updatedLocale = LocaleOperation.get_current_locale(mgr)
-        if updatedLocale and updatedLocale != newLocale:
-            print(f"Locale verification mismatch: expected {newLocale}, got {updatedLocale}")
-            return False
-
-        print(f"Locale set to {newLocale}")
-        return True
+        return OperationLogRecord(LocaleOperation.LOCALE, changed, previousLocale, currentLocale, errors)
 
 if __name__ == '__main__':
     pipeline = OperationPipeline([TimezoneOperation(), LocaleOperation()])
-    res = pipeline.run_cli('Configure system timezone and locale')
-    sys.exit()
+    pipeline.run_cli('Configure system timezone and locale')

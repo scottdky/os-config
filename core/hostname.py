@@ -35,7 +35,7 @@ from typing import Any
 # pylint: disable=wrong-import-position
 sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 from lib.managers import BaseManager
-from lib.operations import OperationBase, OperationPipeline
+from lib.operations import OperationBase, OperationLogRecord, OperationPipeline
 # pylint: enable=wrong-import-position
 
 
@@ -70,7 +70,7 @@ class HostnameOperation(OperationBase):
         hostName = self._prompt_text_value(prompt, currHost).strip()
         return {self.HOSTNAME: hostName if hostName else currHost}
 
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
         """Apply hostname change.
 
         Args:
@@ -78,12 +78,10 @@ class HostnameOperation(OperationBase):
             configs (dict[str, Any]): Resolved config values.
 
         Returns:
-            bool: True if hostname changed.
+            OperationLogRecord: Hostname operation record.
         """
-        newName = configs.get(self.HOSTNAME)
-        if not newName:
-            return False
-        return self.set_host(mgr, str(newName))
+        newName = str(configs[self.HOSTNAME])
+        return HostnameOperation.set_host(mgr, newName)
 
     @staticmethod
     def get_current_hostname(mgr: BaseManager) -> str:
@@ -101,7 +99,7 @@ class HostnameOperation(OperationBase):
         return ''
 
     @staticmethod
-    def set_host(mgr: BaseManager, newName: str) -> bool:
+    def set_host(mgr: BaseManager, newName: str) -> OperationLogRecord:
         """Set the hostname on the target system.
 
         Args:
@@ -109,17 +107,28 @@ class HostnameOperation(OperationBase):
             newName (str): The new hostname to set.
 
         Returns:
-            bool: True if hostname was changed, False if already set.
+            OperationLogRecord: Hostname operation record.
         """
         oldName = HostnameOperation.get_current_hostname(mgr)
+        currentName = oldName
+        changed = False
+        errors: list[str] = []
+
         if oldName == newName:
             print(f"Hostname is already {newName}, no change needed.")
-            return False
+        else:
+            mgr.sed('/etc/hostname', oldName, newName, sudo=True)
+            mgr.sed('/etc/hosts', oldName, newName, sudo=True)
+            currentName = HostnameOperation.get_current_hostname(mgr)
+            if currentName == newName:
+                changed = True
+                print(f"Changed hostname from {oldName} to {newName}")
+            else:
+                errMsg = f'Hostname update verification failed: expected {newName}, got {currentName}'
+                errors.append(errMsg)
+                print(errMsg)
 
-        mgr.sed('/etc/hostname', oldName, newName, sudo=True)
-        mgr.sed('/etc/hosts', oldName, newName, sudo=True)
-        print(f"Changed hostname from {oldName} to {newName}")
-        return True
+        return OperationLogRecord(HostnameOperation.HOSTNAME, changed, oldName, currentName, errors)
 
 
 class UsernameOperation(OperationBase):
@@ -153,7 +162,7 @@ class UsernameOperation(OperationBase):
         userName = self._prompt_text_value(prompt, currUser).strip()
         return {self.USERNAME: userName if userName else currUser}
 
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
         """Apply username change.
 
         Args:
@@ -161,14 +170,11 @@ class UsernameOperation(OperationBase):
             configs (dict[str, Any]): Resolved config values.
 
         Returns:
-            bool: True if username changed.
+            OperationLogRecord: Username operation record.
         """
-        newUser = configs.get(self.USERNAME)
-        if not newUser:
-            return False
-
+        newUser = str(configs[self.USERNAME])
         oldUser = self.get_current_user(mgr)
-        return self.set_user(mgr, oldUser, str(newUser))
+        return UsernameOperation.set_user(mgr, oldUser, newUser)
 
     @staticmethod
     def get_current_user(mgr: BaseManager) -> str:
@@ -186,7 +192,7 @@ class UsernameOperation(OperationBase):
         return 'pi'
 
     @staticmethod
-    def set_user(mgr: BaseManager, oldUser: str, newUser: str) -> bool:
+    def set_user(mgr: BaseManager, oldUser: str, newUser: str) -> OperationLogRecord:
         """Rename a user account on the target system.
 
         Additional info (multi-line): changes the username and home directory.
@@ -198,15 +204,27 @@ class UsernameOperation(OperationBase):
             newUser (str): New username.
 
         Returns:
-            bool: True if user was renamed successfully, False otherwise.
+            OperationLogRecord: Username operation record.
         """
-        _, stderr, code = mgr.run(f'usermod -m -l {newUser} -d /home/{newUser} {oldUser}', sudo=True)
-        if code == 0:
-            print(f"Renamed user from {oldUser} to {newUser}")
-            return True
+        currentUser = oldUser
+        changed = False
+        errors: list[str] = []
 
-        print(f"Error renaming user: {stderr}")
-        return False
+        if oldUser == newUser:
+            print(f"Username is already {newUser}, no change needed.")
+        else:
+            commandResult = mgr.run(f'usermod -m -l {newUser} -d /home/{newUser} {oldUser}', sudo=True)
+            if commandResult.returnCode == 0:
+                print(f"Renamed user from {oldUser} to {newUser}")
+                changed = True
+                currentUser = newUser
+            else:
+                stderr = commandResult.stderr
+                errMsg = stderr.strip() if stderr.strip() else f'Failed to rename user {oldUser} -> {newUser}'
+                errors.append(errMsg)
+                print(f"Error renaming user: {stderr}")
+
+        return OperationLogRecord(UsernameOperation.USERNAME, changed, oldUser, currentUser, errors)
 
 
 class PasswordOperation(OperationBase):
@@ -241,7 +259,7 @@ class PasswordOperation(OperationBase):
         password = self._prompt_secure_value(prompt)
         return {self.PASSWORD: password}
 
-    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
         """Apply password change for current user.
 
         Args:
@@ -249,17 +267,14 @@ class PasswordOperation(OperationBase):
             configs (dict[str, Any]): Resolved config values.
 
         Returns:
-            bool: True if password changed.
+            OperationLogRecord: Password operation record.
         """
-        password = configs.get(self.PASSWORD)
-        if not password:
-            return False
-
+        password = str(configs[self.PASSWORD])
         targetUserName = UsernameOperation.get_current_user(mgr)
-        return self.set_pass(mgr, targetUserName, str(password))
+        return PasswordOperation.set_pass(mgr, targetUserName, password)
 
     @staticmethod
-    def set_pass(mgr: BaseManager, userName: str, password: str) -> bool:
+    def set_pass(mgr: BaseManager, userName: str, password: str) -> OperationLogRecord:
         """Set password for a user on the target system.
 
         Args:
@@ -268,17 +283,27 @@ class PasswordOperation(OperationBase):
             password (str): The password to set (plaintext).
 
         Returns:
-            bool: True if password was changed, False otherwise.
+            OperationLogRecord: Password operation record.
         """
-        _, stderr, code = mgr.run(f"echo '{userName}:{password}' | chpasswd", sudo=True)
-        if code == 0:
-            print(f"Password changed for user {userName}")
-            return True
+        previousState = {'userName': userName, 'password': '<redacted>'}
+        currentState = {'userName': userName, 'password': '<redacted>'}
+        changed = False
+        errors: list[str] = []
 
-        print(f"Error changing password: {stderr}")
-        return False
+        commandResult = mgr.run(f"echo '{userName}:{password}' | chpasswd", sudo=True)
+        if commandResult.returnCode == 0:
+            print(f"Password changed for user {userName}")
+            changed = True
+            currentState = {'userName': userName, 'password': '<updated>'}
+        else:
+            stderr = commandResult.stderr
+            errMsg = stderr.strip() if stderr.strip() else f'Failed to update password for user {userName}'
+            errors.append(errMsg)
+            print(f"Error changing password: {stderr}")
+
+        return OperationLogRecord(PasswordOperation.PASSWORD, changed, previousState, currentState, errors)
 
 
 if __name__ == '__main__':
     pipeline = OperationPipeline([HostnameOperation(), UsernameOperation(), PasswordOperation()])
-    sys.exit(pipeline.run_cli('Configure hostname, username, and password'))
+    pipeline.run_cli('Configure hostname, username, and password')
