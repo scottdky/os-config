@@ -39,6 +39,10 @@ class BaseImageManager(BaseManager):
         self._perform_mount()
         self._setup_qemu()
 
+    def is_os_image(self) -> bool:
+        """Check if the target is an OS image (img file or sdcard)"""
+        return True
+
     def run(self, command: str, sudo: bool = False) -> CommandResult:
         userspecArg = ''
         if not sudo and self.defaultChrootUser:

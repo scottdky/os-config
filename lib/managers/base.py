@@ -67,6 +67,20 @@ class BaseManager:
         self.allowInteractiveSudo = allowInteractiveSudo
         self._operationLogs: list[Any] = []
 
+    def is_raspi_os(self) -> bool:
+        """Check if the target is running Raspberry Pi OS.
+
+        In 32-bit systems os-release will show Raspian, but on 64-bit systems
+        every key is Debian, including the URL. Therefore, we check for
+        what we really care about: the presence of raspi-config, which is
+        unique to Raspberry Pi OS.
+        """
+        return self.exists('/usr/bin/raspi-config')
+
+    def is_os_image(self) -> bool:
+        """Check if the target is an OS image (img file or sdcard)"""
+        return False # Default to False; override in relevant manager subclasses
+
     def log_operation(self, operationRecord: Any) -> None:
         """Append one operation record to manager-owned operation logs.
 

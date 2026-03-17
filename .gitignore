@@ -55,3 +55,4 @@ Thumbs.db
 # Other files to ignore
 raspi_config
 raspios.img
+raspi-config

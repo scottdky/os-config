@@ -43,7 +43,10 @@ rtc:
 # splashscreen:
 #     imagefile: /home/foo/splash.png  # Path to the splash screen image file
 
-# network:
+network:
+  ssh:
+    enable: True
+
 #     wifi_ssid: MyNetworkName
 #     # wifi_password omitted -> prompted when required by selected operation
 #     dhcp: True

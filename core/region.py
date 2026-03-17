@@ -117,10 +117,19 @@ class TimezoneOperation(OperationBase):
         Returns:
             str: Current timezone (for example, `America/Chicago`) or empty string.
         """
-        timezoneResult = mgr.run('cat /etc/timezone', sudo=True)
-        if timezoneResult.returnCode == 0:
-            return timezoneResult.stdout.strip()
-        return ''
+        isImage = mgr.is_os_image()
+
+        if isImage:
+            timezoneResult = mgr.run('cat /etc/timezone', sudo=True)
+            if timezoneResult.returnCode == 0:
+                return timezoneResult.stdout.strip()
+            return ''
+        else:
+            # Use timedatectl for live systems
+            result = mgr.run('timedatectl show --property=Timezone --value', sudo=False)
+            if result.returnCode == 0:
+                return result.stdout.strip()
+            return ''
 
     @staticmethod
     def set_timezone(mgr: BaseManager, newTimezone: str) -> OperationLogRecord:
@@ -138,6 +147,9 @@ class TimezoneOperation(OperationBase):
         changed = False
         errors: list[str] = []
 
+        isImage = mgr.is_os_image()
+        isRaspi = mgr.is_raspi_os()
+
         # Validate timezone exists
         tzPath = f'/usr/share/zoneinfo/{newTimezone}'
         _, _, tzCheckCode = mgr.run(f'test -f {tzPath}', sudo=True)
@@ -145,24 +157,33 @@ class TimezoneOperation(OperationBase):
             errMsg = f'Timezone {newTimezone} not found at {tzPath}'
             print(errMsg)
             errors.append(errMsg)
-        elif previousTimezone == newTimezone:
+            return OperationLogRecord(TimezoneOperation.TIMEZONE, changed, previousTimezone, currentTimezone, errors)
+
+        if previousTimezone == newTimezone:
             print(f"Timezone is already set to {newTimezone}, no change needed.")
-        else:
-            try:
+            return OperationLogRecord(TimezoneOperation.TIMEZONE, changed, previousTimezone, currentTimezone, errors)
+
+        try:
+            if isImage:
                 mgr.run_or_raise(f'echo {shlex.quote(newTimezone)} > /etc/timezone', sudo=True, errorPrefix='Failed to set /etc/timezone')
                 mgr.run_or_raise(f'ln -snf {shlex.quote(tzPath)} /etc/localtime', sudo=True, errorPrefix='Failed to update /etc/localtime symlink')
-            except CommandExecutionError as e:
-                print(str(e))
-                errors.append(str(e))
+            elif not isImage and isRaspi:
+                mgr.run_or_raise(f'raspi-config nonint do_change_timezone {shlex.quote(newTimezone)}', sudo=True, errorPrefix='Failed to set Pi timezone')
+            else:
+                mgr.run_or_raise(f'timedatectl set-timezone {shlex.quote(newTimezone)}', sudo=True, errorPrefix='Failed to set Debian timezone')
 
-            currentTimezone = TimezoneOperation.get_current_timezone(mgr)
-            if not errors and currentTimezone == newTimezone:
-                changed = True
-                print(f"Timezone changed from {previousTimezone} to {newTimezone}")
-            elif not errors:
-                errMsg = f'Timezone verification mismatch: expected {newTimezone}, got {currentTimezone}'
-                print(errMsg)
-                errors.append(errMsg)
+        except CommandExecutionError as e:
+            print(str(e))
+            errors.append(str(e))
+
+        currentTimezone = TimezoneOperation.get_current_timezone(mgr)
+        if not errors and currentTimezone == newTimezone:
+            changed = True
+            print(f"Timezone changed from {previousTimezone} to {newTimezone}")
+        elif not errors:
+            errMsg = f'Timezone verification mismatch: expected {newTimezone}, got {currentTimezone}'
+            print(errMsg)
+            errors.append(errMsg)
 
         return OperationLogRecord(TimezoneOperation.TIMEZONE, changed, previousTimezone, currentTimezone, errors)
 
@@ -236,15 +257,26 @@ class LocaleOperation(OperationBase):
         Returns:
             str: Current locale (for example, `en_GB.UTF-8`) or empty string.
         """
-        localeFileResult = mgr.run("grep '^LANG=' /etc/default/locale | cut -d= -f2", sudo=True)
-        if localeFileResult.returnCode == 0 and localeFileResult.stdout.strip():
-            return localeFileResult.stdout.strip().strip('"')
+        isImage = mgr.is_os_image()
 
-        localeConfResult = mgr.run("grep '^LANG=' /etc/locale.conf | cut -d= -f2", sudo=True)
-        if localeConfResult.returnCode == 0 and localeConfResult.stdout.strip():
-            return localeConfResult.stdout.strip().strip('"')
+        if isImage:
+            localeFileResult = mgr.run("grep '^LANG=' /etc/default/locale | cut -d= -f2", sudo=True)
+            if localeFileResult.returnCode == 0 and localeFileResult.stdout.strip():
+                return localeFileResult.stdout.strip().strip('"')
 
-        return ''
+            localeConfResult = mgr.run("grep '^LANG=' /etc/locale.conf | cut -d= -f2", sudo=True)
+            if localeConfResult.returnCode == 0 and localeConfResult.stdout.strip():
+                return localeConfResult.stdout.strip().strip('"')
+
+            return ''
+        else:
+            # Live evaluation
+            result = mgr.run('localectl show --property=SystemLocale', sudo=False)
+            if result.returnCode == 0:
+                for line in result.stdout.splitlines():
+                    if line.startswith('LANG='):
+                        return line.split('=', 1)[1]
+            return ''
 
     @staticmethod
     def set_locale(mgr: BaseManager, newLocale: str) -> OperationLogRecord:
@@ -262,40 +294,51 @@ class LocaleOperation(OperationBase):
         changed = False
         errors: list[str] = []
 
+        isImage = mgr.is_os_image()
+        isRaspi = mgr.is_raspi_os()
+
         if previousLocale == newLocale:
             print(f"Locale is already set to {newLocale}, no change needed.")
-        else:
-            localeLineResult = mgr.run(f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED", sudo=True)
-            localeLine = localeLineResult.stdout.strip()
-            if localeLineResult.returnCode != 0 or not localeLine:
-                errMsg = f'Locale {newLocale} not found in /usr/share/i18n/SUPPORTED'
+            return OperationLogRecord(LocaleOperation.LOCALE, changed, previousLocale, currentLocale, errors)
+
+        localeLineResult = mgr.run(f"grep -E '^{newLocale}( |$)' /usr/share/i18n/SUPPORTED", sudo=True)
+        localeLine = localeLineResult.stdout.strip()
+        if localeLineResult.returnCode != 0 or not localeLine:
+            errMsg = f'Locale {newLocale} not found in /usr/share/i18n/SUPPORTED'
+            print(errMsg)
+            errors.append(errMsg)
+            return OperationLogRecord(LocaleOperation.LOCALE, changed, previousLocale, currentLocale, errors)
+
+        newLang = localeLine.split()[0]
+        try:
+            if isImage:
+                mgr.run_or_raise(
+                    "if [ -L /etc/locale.gen ] && [ \"$(readlink /etc/locale.gen)\" = \"/usr/share/i18n/SUPPORTED\" ]; then rm -f /etc/locale.gen; fi",
+                    sudo=True, errorPrefix='Failed to prepare /etc/locale.gen')
+                mgr.run_or_raise(
+                    f"printf '%s\\n' {shlex.quote(localeLine)} > /etc/locale.gen", sudo=True, errorPrefix='Failed to write /etc/locale.gen')
+                mgr.run_or_raise(f'locale-gen {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to generate locale')
+                mgr.run_or_raise('update-locale --no-checks LANG', sudo=True, errorPrefix='Failed to clear LANG')
+                mgr.run_or_raise(f'update-locale --no-checks LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set LANG')
+            elif not isImage and isRaspi:
+                mgr.run_or_raise(f'raspi-config nonint do_change_locale {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set Pi locale')
+            else:
+                mgr.run_or_raise(f'localectl set-locale LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set Debian locale')
+
+        except CommandExecutionError as e:
+            print(str(e))
+            errors.append(str(e))
+
+        currentLocale = LocaleOperation.get_current_locale(mgr)
+        if not errors:
+            if currentLocale and currentLocale != newLocale:
+                errMsg = f'Locale verification mismatch: expected {newLocale}, got {currentLocale}'
                 print(errMsg)
                 errors.append(errMsg)
             else:
-                newLang = localeLine.split()[0]
-                try:
-                    mgr.run_or_raise(
-                        "if [ -L /etc/locale.gen ] && [ \"$(readlink /etc/locale.gen)\" = \"/usr/share/i18n/SUPPORTED\" ]; then rm -f /etc/locale.gen; fi",
-                        sudo=True, errorPrefix='Failed to prepare /etc/locale.gen')
-                    mgr.run_or_raise(
-                        f"printf '%s\\n' {shlex.quote(localeLine)} > /etc/locale.gen", sudo=True, errorPrefix='Failed to write /etc/locale.gen')
-                    mgr.run_or_raise(f'locale-gen {shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to generate locale')
-                    mgr.run_or_raise('update-locale --no-checks LANG', sudo=True, errorPrefix='Failed to clear LANG')
-                    mgr.run_or_raise(f'update-locale --no-checks LANG={shlex.quote(newLang)}', sudo=True, errorPrefix='Failed to set LANG')
-                except CommandExecutionError as e:
-                    print(str(e))
-                    errors.append(str(e))
-
-            currentLocale = LocaleOperation.get_current_locale(mgr)
-            if not errors:
-                if currentLocale and currentLocale != newLocale:
-                    errMsg = f'Locale verification mismatch: expected {newLocale}, got {currentLocale}'
-                    print(errMsg)
-                    errors.append(errMsg)
-                else:
-                    changed = True
-                    currentLocale = currentLocale if currentLocale else newLocale
-                    print(f"Locale set to {newLocale}")
+                changed = True
+                currentLocale = currentLocale if currentLocale else newLocale
+                print(f"Locale set to {newLocale}")
 
         return OperationLogRecord(LocaleOperation.LOCALE, changed, previousLocale, currentLocale, errors)
 

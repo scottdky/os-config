@@ -33,6 +33,12 @@ class _FakeOperationManager(BaseManager):
         self.failUsermod = False
         self.failChpasswd = False
 
+    def is_os_image(self) -> bool:
+        return True
+
+    def is_raspi_os(self) -> bool:
+        return False
+
     def run(self, command: str, sudo: bool = False) -> CommandResult:
         _ = sudo
         if command == 'cat /etc/hostname':

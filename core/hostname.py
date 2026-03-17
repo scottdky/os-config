@@ -1,5 +1,4 @@
-#CMD: hostname setup Name & Pass
-
+#!/usr/bin/env python3
 """Set hostname, username, and password using operation classes.
 
 Additional info (multi-line): this module follows the operation pipeline
@@ -116,17 +115,32 @@ class HostnameOperation(OperationBase):
 
         if oldName == newName:
             print(f"Hostname is already {newName}, no change needed.")
-        else:
+            return OperationLogRecord(HostnameOperation.HOSTNAME, changed, oldName, currentName, errors)
+
+        isImage = mgr.is_os_image()
+        isRaspi = mgr.is_raspi_os()
+
+        if isImage:
+            # For offline images, directly edit the files
             mgr.sed('/etc/hostname', oldName, newName, sudo=True)
             mgr.sed('/etc/hosts', oldName, newName, sudo=True)
-            currentName = HostnameOperation.get_current_hostname(mgr)
-            if currentName == newName:
-                changed = True
-                print(f"Changed hostname from {oldName} to {newName}")
-            else:
-                errMsg = f'Hostname update verification failed: expected {newName}, got {currentName}'
-                errors.append(errMsg)
-                print(errMsg)
+        elif not isImage and isRaspi:
+            # Use raspi-config for live Pi
+            mgr.run(f'raspi-config nonint do_hostname {newName}', sudo=True)
+        else:
+            # Use hostnamectl for live Debian
+            mgr.run(f'hostnamectl set-hostname {newName}', sudo=True)
+            # Ensure /etc/hosts is also updated to prevent resolution issues
+            mgr.sed('/etc/hosts', oldName, newName, sudo=True)
+
+        currentName = HostnameOperation.get_current_hostname(mgr)
+        if currentName == newName:
+            changed = True
+            print(f"Changed hostname from {oldName} to {newName}")
+        else:
+            errMsg = f'Hostname update verification failed: expected {newName}, got {currentName}'
+            errors.append(errMsg)
+            print(errMsg)
 
         return OperationLogRecord(HostnameOperation.HOSTNAME, changed, oldName, currentName, errors)
 
