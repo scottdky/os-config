@@ -46,10 +46,9 @@ rtc:
 network:
   ssh:
     enable: True
-
-#     wifi_ssid: MyNetworkName
-#     # wifi_password omitted -> prompted when required by selected operation
-#     dhcp: True
+  wifi:
+    enable: True
+    wifi_country: US
 
 orchestrations:
   basic_pi:

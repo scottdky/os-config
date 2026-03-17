@@ -23,10 +23,7 @@ class MockFourOSStatesManager(BaseManager):
     def is_raspi_os(self) -> bool:
         return self._is_raspi
 
-    def file_exists(self, remotePath: str) -> bool:
-        return True
-
-    def dir_exists(self, remotePath: str) -> bool:
+    def exists(self, remotePath: str) -> bool:
         return True
 
     def run(self, command: str, sudo: bool = False) -> CommandResult:
@@ -116,3 +113,22 @@ def test_locale_four_states(is_image, is_raspi):
     else:
         assert 'localectl set-locale LANG=fr_FR.UTF-8' in mgr.executed_commands
 
+
+@pytest.mark.parametrize("is_image,is_raspi", [(True, True), (True, False), (False, True), (False, False)])
+def test_network_wifi_four_states(is_image, is_raspi):
+    mgr = MockFourOSStatesManager(is_image, is_raspi)
+    from core.network import WiFiOperation
+    op = WiFiOperation()
+    
+    op.set_wifi(mgr, 'US', 'Test-Network', 'supersecret', 'Country: ')
+    
+    if is_image and is_raspi:
+        assert any('Failed to create wpa_supplicant.conf' not in str(cmd) and 'printf' in cmd and '/boot/firmware/wpa_supplicant.conf' in cmd for cmd in mgr.executed_commands)
+    elif is_image and not is_raspi:
+        assert any('printf' in cmd and '/etc/NetworkManager/system-connections/Test-Network.nmconnection' in cmd for cmd in mgr.executed_commands)
+    elif is_raspi:
+        assert 'raspi-config nonint do_wifi_country US' in mgr.executed_commands
+        assert 'raspi-config nonint do_wifi_ssid_passphrase Test-Network supersecret' in mgr.executed_commands
+    else:
+        assert 'iw reg set US' in mgr.executed_commands
+        assert 'nmcli device wifi connect Test-Network password supersecret' in mgr.executed_commands
