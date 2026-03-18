@@ -51,10 +51,10 @@ class TestLoopDetection:
                 stdout=mockLosetup
             )
 
-            mgr = ImageFileManager(imagePath=imagePath, mountPath="/tmp/test")
-            mountPath = mgr._find_existing_loop_mount()
+            with ImageFileManager(imagePath=imagePath, mountPath="/tmp/test") as mgr:
+                mountPath = mgr._find_existing_loop_mount()
 
-            assert mountPath == "/tmp/test"
+                assert mountPath == "/tmp/test"
 
     def test_no_loop_device(self):
         """No existing loop device for image file."""
@@ -74,10 +74,10 @@ class TestLoopDetection:
                 stdout=mockLosetup
             )
 
-            mgr = ImageFileManager(imagePath=imagePath, mountPath="/tmp/test")
-            result = mgr._find_existing_loop_mount()
+            with ImageFileManager(imagePath=imagePath, mountPath="/tmp/test") as mgr:
+                result = mgr._find_existing_loop_mount()
 
-            assert result is None
+                assert result is None
 
     def test_loop_but_not_mounted(self):
         """Loop device exists but partitions not mounted."""
@@ -104,11 +104,11 @@ class TestLoopDetection:
                 stdout=mockLosetup
             )
 
-            mgr = ImageFileManager(imagePath=imagePath, mountPath="/tmp/test")
-            result = mgr._find_existing_loop_mount()
+            with ImageFileManager(imagePath=imagePath, mountPath="/tmp/test") as mgr:
+                result = mgr._find_existing_loop_mount()
 
-            # Loop exists but not mounted - return None to force new mount
-            assert result is None
+                # Loop exists but not mounted - return None to force new mount
+                assert result is None
 
     def test_multiple_loop_devices(self):
         """Multiple loop devices, only one matches our image."""
@@ -136,11 +136,11 @@ class TestLoopDetection:
                 stdout=mockLosetup
             )
 
-            mgr = ImageFileManager(imagePath=imagePath, mountPath="/tmp/test")
-            mountPath = mgr._find_existing_loop_mount()
+            with ImageFileManager(imagePath=imagePath, mountPath="/tmp/test") as mgr:
+                mountPath = mgr._find_existing_loop_mount()
 
-            # Should find root mount path for loop0
-            assert mountPath == "/tmp/test"
+                # Should find root mount path for loop0
+                assert mountPath == "/tmp/test"
 
     def test_different_mount_path(self):
         """Loop exists at different mount path than requested."""
@@ -167,8 +167,8 @@ class TestLoopDetection:
                 stdout=mockLosetup
             )
 
-            mgr = ImageFileManager(imagePath=imagePath, mountPath="/tmp/test")
-            mountPath = mgr._find_existing_loop_mount()
+            with ImageFileManager(imagePath=imagePath, mountPath="/tmp/test") as mgr:
+                mountPath = mgr._find_existing_loop_mount()
 
-            # Should find root mount path even if it's different than requested
-            assert mountPath == "/mnt/old"
+                # Should find root mount path even if it's different than requested
+                assert mountPath == "/mnt/old"

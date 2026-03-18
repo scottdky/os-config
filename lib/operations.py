@@ -92,6 +92,17 @@ class OperationBase(ABC):
         self.name = name
         self.requiredConfigs = requiredConfigs
 
+    def is_manager_compatible(self, mgr: BaseManager) -> tuple[bool, str]:
+        """Check if this operation can be executed by the given manager.
+
+        Args:
+            mgr (BaseManager): Target manager instance.
+
+        Returns:
+            tuple[bool, str]: True and empty string if compatible, or False and an error message if incompatible.
+        """
+        return True, ""
+
     def gather_config(self, mgr: BaseManager) -> dict[str, Any]:
         """Resolve and prompt config for this operation.
 

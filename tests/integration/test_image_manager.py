@@ -26,7 +26,7 @@ class TestImageManagerIntegration:
 
         mgr = None
         try:
-            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir)
+            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir).__enter__()
             cleanupMounts(tempMountDir)
 
             # Verify mount points exist
@@ -56,11 +56,11 @@ class TestImageManagerIntegration:
         mgr2 = None
         try:
             # First mount
-            mgr1 = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir)
+            mgr1 = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir).__enter__()
             assert mgr1.mountPath == tempMountDir
 
             # Create second manager for same image
-            mgr2 = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir)
+            mgr2 = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir).__enter__()
 
             # Second manager should reuse current mount path and avoid claiming ownership.
             assert mgr2.mountPath == tempMountDir
@@ -80,7 +80,7 @@ class TestImageManagerIntegration:
 
         mgr = None
         try:
-            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir)
+            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir).__enter__()
             cleanupMounts(tempMountDir)
 
             if not mgr.exists('/bin/bash'):
@@ -107,7 +107,7 @@ class TestImageManagerIntegration:
 
         mgr = None
         try:
-            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir)
+            mgr = ImageFileManager(imagePath=testImagePath, mountPath=tempMountDir).__enter__()
             cleanupMounts(tempMountDir)
 
             # Root should be mounted

@@ -36,9 +36,11 @@ class BaseImageManager(BaseManager):
         if sudoCheckResult.returnCode != 0:
             raise RuntimeError(f"Sudo validation failed: {sudoCheckResult.stderr}")
 
+    def __enter__(self) -> "BaseImageManager":
         self._validate_target()
         self._perform_mount()
         self._setup_qemu()
+        return self
 
     def is_os_image(self) -> bool:
         """Check if the target is an OS image (img file or sdcard)"""

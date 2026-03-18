@@ -17,16 +17,20 @@ class SSHManager(BaseManager):
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        connect_kwargs = {'hostname': hostName}
+        self.connect_kwargs = {'hostname': hostName}
         if userName:
-            connect_kwargs['username'] = userName
+            self.connect_kwargs['username'] = userName
         if keyFilename:
-            connect_kwargs['key_filename'] = keyFilename
+            self.connect_kwargs['key_filename'] = keyFilename
         if password:
-            connect_kwargs['password'] = password
+            self.connect_kwargs['password'] = password
 
-        self.client.connect(**connect_kwargs)
+        self.sftp = None
+
+    def __enter__(self) -> "SSHManager":
+        self.client.connect(**self.connect_kwargs)
         self.sftp = self.client.open_sftp()
+        return self
 
     def run(self, command: str, sudo: bool = False) -> CommandResult:
         """Execute a command on remote host"""
@@ -75,7 +79,8 @@ class SSHManager(BaseManager):
 
     def close(self) -> None:
         """Close SSH connection"""
-        self.sftp.close()
+        if self.sftp:
+            self.sftp.close()
         self.client.close()
 
 

@@ -162,7 +162,16 @@ def test_choose_custom_operations_supports_multi_select(monkeypatch):
     """Custom chooser should return all selected operations from one multi-select prompt."""
 
     registry = build_operation_registry()
-    monkeypatch.setattr('lib.orchestration.get_multi_selection', lambda *args, **kwargs: [0, 2])
+    
+    choices = []
+    for moduleName in sorted(registry):
+        for operationName in sorted(registry[moduleName]):
+            choices.append((moduleName, operationName))
+            
+    hostname_idx = choices.index(('hostname', 'hostname'))
+    username_idx = choices.index(('hostname', 'username'))
+
+    monkeypatch.setattr('lib.orchestration.get_multi_selection', lambda *args, **kwargs: [hostname_idx, username_idx])
 
     selected = choose_custom_operations(registry)
 

@@ -67,7 +67,7 @@ class TestSDCardManagerIntegration:
 
         mgr = None
         try:
-            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir)
+            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir).__enter__()
 
             # Detect partitions via lsblk
             partitions = _read_partitions_for_device(loopDev)
@@ -93,7 +93,7 @@ class TestSDCardManagerIntegration:
 
         mgr = None
         try:
-            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir)
+            mgr = SDCardManager(devicePath=loopDev, mountPath=tempMountDir).__enter__()
 
             partitions = _read_partitions_for_device(loopDev)
 
@@ -143,7 +143,7 @@ class TestRealSDCard:
         mgr = None
         try:
             # Test with real device
-            mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir)
+            mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir).__enter__()
 
             # Detect partitions
             partitions = _read_partitions_for_device(realDevice)
@@ -170,7 +170,7 @@ class TestRealSDCard:
 
         mgr = None
         try:
-            mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir)
+            mgr = SDCardManager(devicePath=realDevice, mountPath=tempMountDir).__enter__()
             partitions = _read_partitions_for_device(realDevice)
             assert "root" in partitions
             assert partitions["root"].startswith(realDevice)

@@ -57,11 +57,11 @@ class TestPartitionDetection:
                 stdout=mockOutput
             )
 
-            mgr = SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test")
-            partitions = mgr._detect_partitions()
+            with SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test") as mgr:
+                partitions = mgr._detect_partitions()
 
-            assert partitions["boot"] == "/dev/sdb1"
-            assert partitions["root"] == "/dev/sdb2"
+                assert partitions["boot"] == "/dev/sdb1"
+                assert partitions["root"] == "/dev/sdb2"
 
     def test_mmc_partition_layout(self):
         """Detect MMC device with p-style partition naming."""
@@ -94,11 +94,11 @@ class TestPartitionDetection:
                 stdout=mockOutput
             )
 
-            mgr = SDCardManager(devicePath="/dev/mmcblk0", mountPath="/tmp/test")
-            partitions = mgr._detect_partitions()
+            with SDCardManager(devicePath="/dev/mmcblk0", mountPath="/tmp/test") as mgr:
+                partitions = mgr._detect_partitions()
 
-            assert partitions["boot"] == "/dev/mmcblk0p1"
-            assert partitions["root"] == "/dev/mmcblk0p2"
+                assert partitions["boot"] == "/dev/mmcblk0p1"
+                assert partitions["root"] == "/dev/mmcblk0p2"
 
     def test_single_partition(self):
         """Handle device with only one partition."""
@@ -126,12 +126,12 @@ class TestPartitionDetection:
                 stdout=mockOutput
             )
 
-            mgr = SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test")
-            partitions = mgr._detect_partitions()
+            with SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test") as mgr:
+                partitions = mgr._detect_partitions()
 
-            # Only root partition exists
-            assert partitions.get("boot") is None
-            assert partitions["root"] == "/dev/sdb1"
+                # Only root partition exists
+                assert partitions.get("boot") is None
+                assert partitions["root"] == "/dev/sdb1"
 
     def test_no_partitions(self):
         """Handle device with no partitions."""
@@ -153,11 +153,11 @@ class TestPartitionDetection:
                 stdout=mockOutput
             )
 
-            mgr = SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test")
-            partitions = mgr._detect_partitions()
+            with SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test") as mgr:
+                partitions = mgr._detect_partitions()
 
-            # Empty dict
-            assert len(partitions) == 0
+                # Empty dict
+                assert len(partitions) == 0
 
     def test_multiple_ext4_partitions(self):
         """When multiple ext4 partitions exist, use the largest as root."""
@@ -195,9 +195,9 @@ class TestPartitionDetection:
                 stdout=mockOutput
             )
 
-            mgr = SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test")
-            partitions = mgr._detect_partitions()
+            with SDCardManager(devicePath="/dev/sdb", mountPath="/tmp/test") as mgr:
+                partitions = mgr._detect_partitions()
 
-            assert partitions["boot"] == "/dev/sdb1"
-            # Should pick largest ext4 partition
-            assert partitions["root"] == "/dev/sdb3"
+                assert partitions["boot"] == "/dev/sdb1"
+                # Should pick largest ext4 partition
+                assert partitions["root"] == "/dev/sdb3"

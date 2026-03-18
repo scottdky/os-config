@@ -3,7 +3,23 @@ region:
     locale: "en_US.UTF-8"          # Locale, e.g. "en_US.UTF-8", "en_GB.UTF-8", "fr_FR.UTF-8"
 
 partition:
-    name: home
+  # 1. Expand the physical .img file by 5GB (Ignored for live SD cards)
+  image_expand_mb: 5000
+
+  # 2. Resize an existing partition (usually partition 2 for root)
+  resize_partitions:
+    - mount: /       # Mount point of the partition to resize (e.g. /, /home, /data)
+      size_mb: 2000      # Expand by 2000MB (if omitted/0, fills remaining space)
+
+  # 3. Add new partitions sequentially
+  add_partitions:
+    - label: home
+      size_mb: 2000      # Fixed size
+      fs: ext4
+      copy_source: /home # This triggers the special handling
+    - label: data
+      size_mb: 0         # 0 means "use 100% of the remaining free space"
+      fs: ext4
 
 serialport:
     enable_uart: True

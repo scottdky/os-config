@@ -52,6 +52,19 @@ def run_install_cli() -> None:
             print('No manager selected. Exiting.')
             return
 
+        preflight_failed = False
+        for op in operations:
+            compatible, error_msg = op.is_manager_compatible(manager)
+            if not compatible:
+                print(f"Error: Operation '{op.name}' is incompatible with the selected manager.")
+                if error_msg:
+                    print(f"  Reason: {error_msg}")
+                preflight_failed = True
+
+        if preflight_failed:
+            print("Preflight check failed. Aborting.")
+            return
+
         with manager as mgr:
             run_operations_with_manager(mgr, operations, selectedName)
         return
