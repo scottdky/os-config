@@ -2,6 +2,9 @@ region:
     # timezone: "America/Chicago"  # Timezone, e.g. "America/New_York", "Europe/London", "Asia/Tokyo"
     locale: "en_US.UTF-8"          # Locale, e.g. "en_US.UTF-8", "en_GB.UTF-8", "fr_FR.UTF-8"
 
+partition:
+    name: home
+
 serialport:
     enable_uart: True
     baudrate: 115200

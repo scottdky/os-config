@@ -15,7 +15,7 @@ class LocalManager(BaseManager):
 
     def run(self, command: str, sudo: bool = False) -> CommandResult:
         """Execute a command on localhost"""
-        commandResult = self._run_local(command, sudo=sudo)
+        commandResult = self.run_local(command, sudo=sudo)
         if commandResult.returnCode != 0:
             print(f"Error: {commandResult.stderr}")
         return commandResult
@@ -31,7 +31,7 @@ class LocalManager(BaseManager):
     def get(self, remotePath: str, localPath: str, sudo: bool = False) -> None:
         """Copy file from local system to another local path"""
         if sudo:
-            copyResult = self._run_local(
+            copyResult = self.run_local(
                 f'cp {shlex.quote(remotePath)} {shlex.quote(localPath)}',
                 sudo=True
             )

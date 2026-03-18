@@ -1,74 +1,82 @@
 #!/usr/bin/env python
 
 """
-Fstab - an fstab parser, based loosely on http://python-fstab.sourcearchive.com/documentation/1.4-0ubuntu1/fstab_8py-source.html
+Fstab - an fstab parser, loosely based on older fstab editors.
 
 Usage: load a current fstab file into Fstab. Examine each parsed line and modify as desired. Retrieve the contents and write back out.
 
 Fstab columns:   <device> <mount point>   <fs type>  <options>       <dump>  <fsck>
 """
 
-from builtins import object
-class FstabLine(object):
-    def __init__(self, raw):
-        self.raw = raw.strip()
-        #print 'raw line {}'.format(self.raw)
-        if not self.raw or self.raw[0] == '#':
-            self.parts = None
-        else:
-            self.createParts(raw.split())
+from typing import Dict, List, Optional
+from lib.managers.base import BaseManager
+
+class FstabLine:
+    def __init__(self, raw: str):
+        self.raw: str = raw.strip()
+        self.parts: Optional[Dict[str, str]] = None
+        
+        if not self.raw or self.raw.startswith('#'):
+            return
             
-    def createParts(self, cols):
+        self.createParts(self.raw.split())
+            
+    def createParts(self, cols: List[str]) -> None:
         """Create a dictionary of the fstab colums"""
-        if len(cols) != 6: # 6 is the number of cols in a proper fstab entry
-            return None
-        parts = {}
-        parts['device'] = cols[0]
-        parts['mount'] = cols[1]
-        parts['fstype'] = cols[2]
-        parts['options'] = cols[3]
-        parts['dump'] = cols[4]
-        parts['fsck'] = cols[5]
-        self.parts = parts
+        if len(cols) < 6: # typically 6 cols in a proper fstab entry
+            return
+            
+        self.parts = {
+            'device': cols[0],
+            'mount': cols[1],
+            'fstype': cols[2],
+            'options': cols[3],
+            'dump': cols[4],
+            'fsck': cols[5]
+        }
     
-    def content(self):
+    def content(self) -> str:
         """Get the newest version of the line"""
-        if not self.parts: # nothing has changed
+        if not self.parts: # a comment or blank line
             return self.raw
         
-        parts = []
-        parts.append(self.parts['device'])
-        parts.append(self.parts['mount'])
-        parts.append(self.parts['fstype'])
-        parts.append(self.parts['options'])
-        parts.append(self.parts['dump'])
-        parts.append(self.parts['fsck'])
-        return '\t'.join(parts)
+        return '\t'.join([
+            self.parts['device'],
+            self.parts['mount'],
+            self.parts['fstype'],
+            self.parts['options'],
+            self.parts['dump'],
+            self.parts['fsck']
+        ])
         
 
-class Fstab(object):
-
+class Fstab:
     """Edit an /etc/fstab file."""
 
     def __init__(self):
-        self.lines = []
-        self.fstabPath = None
+        self.lines: List[FstabLine] = []
+        self.fstabPath: str = '/etc/fstab'
 
-    def load(self, filepath):
-        """Read in a new file.
-        Par filename is the full path to the fstab file
-        """
+    def load(self, mgr: BaseManager, filepath: str = '/etc/fstab') -> None:
+        """Read in the fstab file using the provided manager."""
         self.fstabPath = filepath
-        lines = []
-        with open(filepath, "r") as f:
-            for line in f:
-                lines.append(FstabLine(line))
-        self.lines = lines
+        self.lines = []
+        
+        if not mgr.exists(self.fstabPath):
+            return
+            
+        content = mgr.read_file(self.fstabPath, sudo=True)
+        if content:
+            for line in content.splitlines():
+                self.lines.append(FstabLine(line))
 
-    def contents(self):
+    def contents(self) -> str:
         """Get the current file contents with modifications. Return as a string"""
-        buffer = ''
+        buffer = []
         for line in self.lines:
-            buffer += line.content() + '\n'
-        return buffer
-    
+            buffer.append(line.content())
+        return '\n'.join(buffer) + '\n'
+
+    def save(self, mgr: BaseManager) -> None:
+        """Write the configured fstab contents back to the target partition."""
+        mgr.write_file(self.fstabPath, self.contents(), sudo=True)

@@ -37,7 +37,7 @@ class TestQemuArchSelection:
 
         with mock.patch.object(
             manager,
-            '_run_local',
+            'run_local',
             return_value=CommandResult('  Machine:                           AArch64\n', '', 0),
         ):
             binary = manager._detect_qemu_static_binary()
@@ -50,7 +50,7 @@ class TestQemuArchSelection:
 
         with mock.patch.object(
             manager,
-            '_run_local',
+            'run_local',
             return_value=CommandResult('  Machine:                           ARM\n', '', 0),
         ):
             binary = manager._detect_qemu_static_binary()
@@ -63,7 +63,7 @@ class TestQemuArchSelection:
 
         with mock.patch.object(
             manager,
-            '_run_local',
+            'run_local',
             return_value=CommandResult('', 'readelf failed', 1),
         ):
             binary = manager._detect_qemu_static_binary()
@@ -77,11 +77,11 @@ class TestQemuArchSelection:
 
         capturedCommand = {'value': ''}
 
-        def fake_run_local(command: str, sudo: bool = False, allowInteractiveSudo=None):
+        def fakerun_local(command: str, sudo: bool = False, allowInteractiveSudo=None):
             capturedCommand['value'] = command
             return CommandResult('', '', 0)
 
-        with mock.patch.object(manager, '_run_local', side_effect=fake_run_local):
+        with mock.patch.object(manager, 'run_local', side_effect=fakerun_local):
             manager.run('echo ok', sudo=True)
 
         assert '/usr/bin/qemu-arm-static' in capturedCommand['value']

@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from types import TracebackType
 
@@ -52,7 +53,7 @@ class BaseImageManager(BaseManager):
             f'chroot {userspecArg}{shlex.quote(self.mountPath)} '
             f'/usr/bin/{self._qemuStaticBinary} /bin/bash -lc {shlex.quote(command)}'
         )
-        commandResult = self._run_local(chrootCmd, sudo=True)
+        commandResult = self.run_local(chrootCmd, sudo=True)
         if commandResult.returnCode != 0:
             print(f"Error: {commandResult.stderr}")
         return commandResult
@@ -76,7 +77,7 @@ class BaseImageManager(BaseManager):
             raise FileNotFoundError(f"File not found in chroot: {sourcePath}")
 
         if sudo:
-            _, stderr, code = self._run_local(
+            _, stderr, code = self.run_local(
                 f'cp {shlex.quote(sourcePath)} {shlex.quote(localPath)}',
                 sudo=True
             )
@@ -98,7 +99,7 @@ class BaseImageManager(BaseManager):
     def _run_unmount_script(self, forceUnmount: bool = False) -> CommandResult:
         scriptPath = os.path.join(self._scriptDir, 'unmnt_image.sh')
         forceFlag = ' force' if forceUnmount else ''
-        return self._run_local(
+        return self.run_local(
             f'bash {shlex.quote(scriptPath)} {shlex.quote(self.mountPath)}{forceFlag}'
         )
 
@@ -107,7 +108,7 @@ class BaseImageManager(BaseManager):
             preloadPath = os.path.join(self.mountPath, 'etc/ld.so.preload')
             backupPath = f"{preloadPath}.bck"
             if os.path.exists(preloadPath) and not os.path.exists(backupPath):
-                _, stderr, code = self._run_local(
+                _, stderr, code = self.run_local(
                     f'mv {shlex.quote(preloadPath)} {shlex.quote(backupPath)}',
                     sudo=True
                 )
@@ -126,7 +127,7 @@ class BaseImageManager(BaseManager):
             preloadPath = os.path.join(self.mountPath, 'etc/ld.so.preload')
             backupPath = f"{preloadPath}.bck"
             if os.path.exists(backupPath):
-                _, stderr, code = self._run_local(
+                _, stderr, code = self.run_local(
                     f'mv {shlex.quote(backupPath)} {shlex.quote(preloadPath)}',
                     sudo=True
                 )
@@ -141,7 +142,7 @@ class BaseImageManager(BaseManager):
     def _setup_qemu(self) -> None:
         try:
             self._qemuStaticBinary = self._detect_qemu_static_binary()
-            stdout, _, code = self._run_local(f'which {shlex.quote(self._qemuStaticBinary)}')
+            stdout, _, code = self.run_local(f'which {shlex.quote(self._qemuStaticBinary)}')
             if code != 0:
                 print(
                     f"Warning: {self._qemuStaticBinary} not found. "
@@ -156,18 +157,18 @@ class BaseImageManager(BaseManager):
                 if destDirResult.returnCode != 0:
                     print(f"Warning: Could not create QEMU destination directory: {destDirResult.stderr}")
                     return
-                _, _, copyCode = self._run_local(
+                _, _, copyCode = self.run_local(
                     f'rsync -aq {shlex.quote(qemuPath)} {shlex.quote(destPath)}',
                     sudo=True
                 )
                 if copyCode != 0:
-                    self._run_local(f'cp {shlex.quote(qemuPath)} {shlex.quote(destPath)}', sudo=True)
+                    self.run_local(f'cp {shlex.quote(qemuPath)} {shlex.quote(destPath)}', sudo=True)
         except Exception as e:
             print(f"Warning: Could not setup QEMU: {e}")
 
     def _detect_qemu_static_binary(self) -> str:
         targetBashPath = os.path.join(self.mountPath, 'usr/bin/bash')
-        stdout, stderr, code = self._run_local(
+        stdout, stderr, code = self.run_local(
             f'readelf -h {shlex.quote(targetBashPath)}',
             sudo=True
         )
@@ -187,6 +188,18 @@ class BaseImageManager(BaseManager):
         print("Warning: Unknown target architecture in ELF header, defaulting to qemu-arm-static")
         return 'qemu-arm-static'
 
+    @contextmanager
+    def temporarily_unmounted(self):
+        """Temporarily tears down chroot + loop bindings for low-level disk operations."""
+        # Unwind the ld.so.preload hack first
+        self._undo_ldpreload_hack()
+        self._perform_unmount(forceUnmount=True)
+        try:
+            yield
+        finally:
+            self._perform_mount()
+            self._setup_qemu()
+
     def close(self) -> None:
         if self.keepMounted:
             print(f"Keeping mounts active at {self.mountPath} (keepMounted=True)")
@@ -195,7 +208,7 @@ class BaseImageManager(BaseManager):
             self._unmount()
 
     def _is_mount_active(self) -> bool:
-        _, _, code = self._run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
+        _, _, code = self.run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
         return code == 0
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None,
@@ -327,14 +340,14 @@ class ImageFileManager(BaseImageManager):
         imagePathForMount = self._prepare_image_path_for_mount()
         self._preflight_mountability(imagePathForMount)
         scriptPath = os.path.join(self._scriptDir, 'mnt_image.sh')
-        stdout, stderr, code = self._run_local(
+        stdout, stderr, code = self.run_local(
             f'bash {shlex.quote(scriptPath)} {shlex.quote(imagePathForMount)} {shlex.quote(self.mountPath)}'
         )
         if code != 0:
             self._cleanup_staged_image()
             raise RuntimeError(f"Failed to mount image: {stderr}")
 
-        _, verifyErr, verifyCode = self._run_local(f'findmnt -T {self.mountPath}')
+        _, verifyErr, verifyCode = self.run_local(f'findmnt -T {self.mountPath}')
         if verifyCode != 0:
             self._run_unmount_script(forceUnmount=True)
             self._cleanup_staged_image()
@@ -349,7 +362,7 @@ class ImageFileManager(BaseImageManager):
 
     def _find_existing_mount_at_target_path(self) -> str | None:
         """Return target mount path when already active, otherwise None."""
-        stdout, _, code = self._run_local(
+        stdout, _, code = self.run_local(
             f'findmnt -n -o TARGET --target {shlex.quote(self.mountPath)}',
             sudo=True,
         )
@@ -370,7 +383,7 @@ class ImageFileManager(BaseImageManager):
     def _find_existing_loop_mount(self) -> str | None:
         try:
             absImagePath = os.path.abspath(self.imagePath)
-            stdout, _, code = self._run_local(f'losetup -j {absImagePath}')
+            stdout, _, code = self.run_local(f'losetup -j {absImagePath}')
             if code != 0 or not stdout.strip():
                 return None
 
@@ -424,7 +437,7 @@ class ImageFileManager(BaseImageManager):
 
     def _is_network_mounted_path(self, path: str) -> bool:
         targetPath = shlex.quote(path)
-        stdout, _, code = self._run_local(f'findmnt -n -o FSTYPE --target {targetPath}')
+        stdout, _, code = self.run_local(f'findmnt -n -o FSTYPE --target {targetPath}')
         if code != 0:
             return False
         fsType = stdout.strip().lower()
@@ -442,7 +455,7 @@ class ImageFileManager(BaseImageManager):
                 "Please place a local copy on a local drive and retry."
             )
 
-        probeResult = self._run_local(
+        probeResult = self.run_local(
             f'losetup -f --show --read-only {shlex.quote(absImagePath)}',
             sudo=True,
         )
@@ -454,7 +467,7 @@ class ImageFileManager(BaseImageManager):
                 "Unable to attach loop device. Place the image on a local drive and retry."
             )
 
-        self._run_local(f'losetup -d {shlex.quote(loopDevice)}', sudo=True)
+        self.run_local(f'losetup -d {shlex.quote(loopDevice)}', sudo=True)
 
     def _is_in_integration_fixtures(self, path: str) -> bool:
         normalizedPath = os.path.normpath(os.path.abspath(path))
@@ -584,13 +597,13 @@ class SDCardManager(BaseImageManager):
             return
 
         scriptPath = os.path.join(self._scriptDir, 'mnt_sdcard.sh')
-        stdout, stderr, code = self._run_local(
+        stdout, stderr, code = self.run_local(
             f'bash {shlex.quote(scriptPath)} {shlex.quote(self.devicePath)} {shlex.quote(self.mountPath)}'
         )
         if code != 0:
             raise RuntimeError(f"Failed to mount SD card: {stderr}")
 
-        _, verifyErr, verifyCode = self._run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
+        _, verifyErr, verifyCode = self.run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
         if verifyCode != 0:
             self._run_unmount_script(forceUnmount=True)
             raise RuntimeError(
@@ -605,7 +618,7 @@ class SDCardManager(BaseImageManager):
         return
 
     def _detect_partitions(self) -> dict:
-        stdout, stderr, code = self._run_local(
+        stdout, stderr, code = self.run_local(
             f'lsblk --json -o NAME,SIZE,FSTYPE,MOUNTPOINT,LABEL {self.devicePath}'
         )
         if code != 0:

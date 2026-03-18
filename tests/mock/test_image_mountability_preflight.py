@@ -16,7 +16,7 @@ def test_preflight_rejects_network_backed_image():
     manager = ImageFileManager.__new__(ImageFileManager)
 
     manager._is_network_mounted_path = lambda path: True
-    manager._run_local = lambda command, sudo=False: CommandResult('', '', 0)
+    manager.run_local = lambda command, sudo=False: CommandResult('', '', 0)
 
     with pytest.raises(RuntimeError, match='network-backed filesystem'):
         manager._preflight_mountability('/mnt/network/image.img')
@@ -28,7 +28,7 @@ def test_preflight_rejects_when_losetup_probe_fails():
     manager = ImageFileManager.__new__(ImageFileManager)
 
     manager._is_network_mounted_path = lambda path: False
-    manager._run_local = lambda command, sudo=False: CommandResult('', 'losetup failed', 1)
+    manager.run_local = lambda command, sudo=False: CommandResult('', 'losetup failed', 1)
 
     with pytest.raises(RuntimeError, match='Mountability probe failed'):
         manager._preflight_mountability('/tmp/image.img')
@@ -42,7 +42,7 @@ def test_preflight_detaches_probe_loop_device_on_success():
     manager._is_network_mounted_path = lambda path: False
     commands: list[tuple[str, bool]] = []
 
-    def fake_run_local(command: str, sudo: bool = False) -> CommandResult:
+    def fakerun_local(command: str, sudo: bool = False) -> CommandResult:
         commands.append((command, sudo))
         if command.startswith('losetup -f --show --read-only'):
             return CommandResult('/dev/loop7\n', '', 0)
@@ -50,7 +50,7 @@ def test_preflight_detaches_probe_loop_device_on_success():
             return CommandResult('', '', 0)
         return CommandResult('', '', 1)
 
-    manager._run_local = fake_run_local
+    manager.run_local = fakerun_local
 
     manager._preflight_mountability('/tmp/image.img')
 

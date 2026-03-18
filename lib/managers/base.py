@@ -331,9 +331,9 @@ class BaseManager:
 
     #     scriptPath = Path(__file__).resolve().parents[1] / 'raspi-config'
     #     fallbackInner = f"source {shlex.quote(str(scriptPath))} && {funcName} {shlex.quote(settingValue)}"
-    #     return self._run_local(f"bash -lc {shlex.quote(fallbackInner)}", sudo=True)
+    #     return self.run_local(f"bash -lc {shlex.quote(fallbackInner)}", sudo=True)
 
-    def _run_local(self, command: str, sudo: bool = False,
+    def run_local(self, command: str, sudo: bool = False,
                 allowInteractiveSudo: bool | None = None) -> CommandResult:
         """Run a shell command on the host system."""
         def _exec(commandArgs: list[str]) -> CommandResult:
@@ -393,7 +393,7 @@ class BaseManager:
             return CommandResult('', 'Directory path is required', 1)
 
         if sudo:
-            return self._run_local(f'mkdir -p {shlex.quote(path)}', sudo=True)
+            return self.run_local(f'mkdir -p {shlex.quote(path)}', sudo=True)
 
         try:
             os.makedirs(path, exist_ok=True)
@@ -407,7 +407,7 @@ class BaseManager:
             return CommandResult('', '', 0)
 
         if sudo:
-            return self._run_local(f'rmdir {shlex.quote(path)}', sudo=True)
+            return self.run_local(f'rmdir {shlex.quote(path)}', sudo=True)
 
         try:
             os.rmdir(path)
@@ -436,7 +436,7 @@ class BaseManager:
                         return
 
             if sudo:
-                _, stderr, code = self._run_local(
+                _, stderr, code = self.run_local(
                     f'cp {shlex.quote(localPath)} {shlex.quote(destPath)}',
                     sudo=True
                 )
