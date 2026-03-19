@@ -66,6 +66,7 @@ class BaseManager:
         """
         self.allowInteractiveSudo = allowInteractiveSudo
         self._operationLogs: list[Any] = []
+        self._backed_up_files: set[str] = set()
 
     def is_raspi_os(self) -> bool:
         """Check if the target is running Raspberry Pi OS.
@@ -80,6 +81,26 @@ class BaseManager:
     def is_os_image(self) -> bool:
         """Check if the target is an OS image (img file or sdcard)"""
         return False # Default to False; override in relevant manager subclasses
+
+    def get_boot_config_path(self) -> str:
+        """
+        Get the correct path to the Raspberry Pi boot configuration file.
+
+        Additional info (multi-line): In Debian Bookworm and later, the boot partition is
+        mounted at /boot/firmware. In older versions (like Bullseye), it was at /boot.
+
+        Returns:
+            str: The exact path to the target's active config.txt file.
+
+        Raises:
+            FileNotFoundError: If config.txt cannot be found in known locations.
+        """
+        if self.exists('/boot/firmware/config.txt'):
+            return '/boot/firmware/config.txt'
+        if self.exists('/boot/config.txt'):
+            return '/boot/config.txt'
+
+        raise FileNotFoundError("Could not locate Raspberry Pi config.txt in /boot/firmware or /boot")
 
     def log_operation(self, operationRecord: Any) -> None:
         """Append one operation record to manager-owned operation logs.
@@ -201,6 +222,26 @@ class BaseManager:
             if os.path.exists(tempPath):
                 os.remove(tempPath)
 
+    def backup_file(self, remotePath: str, backupExt: str = '.bak', sudo: bool = False) -> None:
+        """Create a backup of a file if it hasn't been backed up yet during this run.
+
+        Additional info (multi-line): To prevent sequential operations from overwriting
+        the original pristine backup with intermediate modified states, this method
+        tracks backed-up files in a set and only creates the backup once per file path.
+
+        Args:
+            remotePath (str): Path to the target file.
+            backupExt (str): Backup extension to append to the filename.
+            sudo (bool): Whether to use elevated privileges.
+        """
+        if not backupExt or remotePath in self._backed_up_files or not self.exists(remotePath):
+            return
+
+        existing_content = self.read_file(remotePath, sudo=sudo)
+        backupPath = f"{remotePath}{backupExt}"
+        self.write_file(backupPath, existing_content, sudo=sudo)
+        self._backed_up_files.add(remotePath)
+
     def append(self, remotePath: str, content: str | list[str], sudo: bool = False) -> None:
         """
         Append content to a remote file (only if not existing),
@@ -287,16 +328,7 @@ class BaseManager:
             return
 
         if backup:
-            backupPath = f"{remotePath}{backup}"
-            fd, tempBackup = tempfile.mkstemp()
-            try:
-                with os.fdopen(fd, 'w') as f:
-                    f.write(existing_content)
-                self.put(tempBackup, backupPath, sudo=sudo)
-                #print(f"Created backup: {backupPath}")
-            finally:
-                if os.path.exists(tempBackup):
-                    os.remove(tempBackup)
+            self.backup_file(remotePath, backupExt=backup, sudo=sudo)
 
         fd, tempPath = tempfile.mkstemp()
         try:
@@ -308,30 +340,60 @@ class BaseManager:
             if os.path.exists(tempPath):
                 os.remove(tempPath)
 
-    # def run_raspi_config_cmd(self, funcName: str, settingValue: str) -> CommandResult:
-    #     """
-    #     Run target raspi-config nonint function, with project fallback support
+    def set_config_line(self, remotePath: str, line: str, enable: bool = True, backup: str = '.bak', sudo: bool = False) -> bool:
+        """
+        Enables or disables a configuration line in a file by commenting / uncommenting.
 
-    #     Additional info (multi-line): Prefers `/usr/bin/raspi-config` in the target OS.
-    #     If unavailable, sources the project fallback script at `lib/raspi_config` and
-    #     calls the same function name there.
+        Additional info (multi-line): This intelligently looks for the exact line (ignoring leading/trailing
+        whitespace and comment characters) and sets it to the desired state. If enable is True and the line
+        is missing, it will be added. If enable is False and the line is missing, no action is taken.
 
-    #     Args:
-    #         mgr (BaseManager): Manager instance for command execution.
-    #         funcName (str): raspi-config function name (for example, `do_change_timezone`).
-    #         settingValue (str): Value passed to the function.
+        Args:
+            remotePath (str): Path to the target file.
+            line (str): The configuration line to manage (without comments, e.g. 'dtparam=spi=on').
+            enable (bool): True to uncomment/add the line, False to comment it out.
+            backup (str): Backup extension to use before modifying, or empty to skip backing up.
+            sudo (bool): Whether to use elevated privileges.
 
-    #     Returns:
-    #         CommandResult: Result from target raspi-config or fallback command.
-    #     """
-    #     # hasRaspiConfig = self.run("test -x /usr/bin/raspi-config", sudo=True)
-    #     # if hasRaspiConfig.returnCode == 0:
-    #     #     command = f"raspi-config nonint {funcName} {shlex.quote(settingValue)}"
-    #     #     return self.run(command, sudo=True)
+        Returns:
+            bool: True if a change was made, False if the line was already in the desired state or file didn't exist when trying to disable.
+        """
+        if not self.exists(remotePath):
+            if not enable:
+                return False
+            existing_content = ''
+        else:
+            existing_content = self.read_file(remotePath, sudo=sudo)
 
-    #     scriptPath = Path(__file__).resolve().parents[1] / 'raspi-config'
-    #     fallbackInner = f"source {shlex.quote(str(scriptPath))} && {funcName} {shlex.quote(settingValue)}"
-    #     return self.run_local(f"bash -lc {shlex.quote(fallbackInner)}", sudo=True)
+        existing_lines = existing_content.splitlines() if existing_content else []
+        modified = False
+
+        escape_line = re.escape(line.strip())
+        pattern = re.compile(r'^\s*#?\s*' + escape_line + r'\s*$')
+
+        found = False
+        target_line = line.strip() if enable else f"#{line.strip()}"
+
+        for i, existing_line in enumerate(existing_lines):
+            if pattern.match(existing_line):
+                found = True
+                if existing_lines[i].strip() != target_line:
+                    existing_lines[i] = target_line
+                    modified = True
+                break
+
+        if not found and enable:
+            existing_lines.append(target_line)
+            modified = True
+
+        if modified:
+            if backup:
+                self.backup_file(remotePath, backupExt=backup, sudo=sudo)
+
+            new_content = '\n'.join(existing_lines) + '\n'
+            self.write_file(remotePath, new_content, sudo=sudo)
+
+        return modified
 
     def run_local(self, command: str, sudo: bool = False,
                 allowInteractiveSudo: bool | None = None) -> CommandResult:
