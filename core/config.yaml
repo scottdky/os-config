@@ -22,7 +22,7 @@ partition:
       fs: ext4
 
 serialport:
-    enable_uart: True
+    #enable_uart: True
     baudrate: 115200
     bluetooth: False # If True and enable_uart is True, bluetooth will assigned to mini-UART
     # If True, the console will be enabled on the serial port during startup

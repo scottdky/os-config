@@ -206,8 +206,28 @@ class BaseImageManager(BaseManager):
         if self.keepMounted:
             print(f"Keeping mounts active at {self.mountPath} (keepMounted=True)")
             return
-        if self._is_mount_active() or any(self._mountedByUs.values()):
+        if self._is_mount_active() and any(self._mountedByUs.values()):
             self._unmount()
+
+    def _handle_existing_mount(self, existingMount: str) -> None:
+        """Prompt user to keep or unmount an existing mount on exit."""
+        self.mountPath = existingMount
+        self._apply_ldpreload_hack()
+
+        if self.keepMounted:
+            print("Reusing existing mount (will keep mounted on cleanup due to keepMounted=True)")
+            self._mountedByUs = {'root': False}
+            return
+
+        if self._supports_interactive_unmount_prompt():
+            val = input(f"Image is already mounted at {existingMount}. Keep it mounted on exit? [Y/n]: ").strip().lower()
+            if val in ['n', 'no', 'false', '0']:
+                print("Will unmount on cleanup.")
+                self._mountedByUs = {'root': True}
+                return
+
+        print("Reusing existing mount (will not unmount on cleanup)")
+        self._mountedByUs = {'root': False}
 
     def _is_mount_active(self) -> bool:
         _, _, code = self.run_local(f'findmnt -T {shlex.quote(self.mountPath)}', sudo=True)
@@ -323,20 +343,12 @@ class ImageFileManager(BaseImageManager):
     def _perform_mount(self) -> None:
         existingTargetMount = self._find_existing_mount_at_target_path()
         if existingTargetMount:
-            print(f"Mount path already active at: {existingTargetMount}")
-            print("Reusing existing mount path (will not unmount on cleanup)")
-            self.mountPath = existingTargetMount
-            self._mountedByUs = {}
-            self._apply_ldpreload_hack()
+            self._handle_existing_mount(existingTargetMount)
             return
 
         existingMount = self._find_existing_loop_mount()
         if existingMount:
-            print(f"Image already loop-mounted at: {existingMount}")
-            print("Reusing existing mount (will not unmount on cleanup)")
-            self.mountPath = existingMount
-            self._mountedByUs = {}
-            self._apply_ldpreload_hack()
+            self._handle_existing_mount(existingMount)
             return
 
         imagePathForMount = self._prepare_image_path_for_mount()
@@ -590,12 +602,7 @@ class SDCardManager(BaseImageManager):
             raise RuntimeError("Could not find root partition (ext4)")
 
         if partitions.get('root_mountpoint'):
-            print(f"Root partition already mounted at: {partitions['root_mountpoint']}")
-            print("Reusing existing mount (will not unmount on cleanup)")
-            self.mountPath = partitions['root_mountpoint']
-            self._mountedByUs['root'] = False
-            self._mountedByUs['boot'] = False
-            self._apply_ldpreload_hack()
+            self._handle_existing_mount(partitions['root_mountpoint'])
             return
 
         scriptPath = os.path.join(self._scriptDir, 'mnt_sdcard.sh')

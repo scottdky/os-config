@@ -210,9 +210,6 @@ class SSHOperation(OperationBase):
         return OperationLogRecord(SSHOperation.SSH, changed, oldState, currentState, errors)
 
 
-if __name__ == '__main__':
-    pipeline = OperationPipeline([SSHOperation(), WiFiOperation()])
-    pipeline.run_cli('Configure network settings (SSH, Wi-Fi)')
 class WiFiOperation(OperationBase):
     """Operation class for configuring Wi-Fi on the target.
 
@@ -383,3 +380,7 @@ class WiFiOperation(OperationBase):
         newState = f"Country: {newCountry}, SSID: {ssid}"
 
         return OperationLogRecord(WiFiOperation.WIFI, changed, oldState, newState, errors)
+
+if __name__ == '__main__':
+    pipeline = OperationPipeline([SSHOperation(), WiFiOperation()])
+    pipeline.run_cli('Configure network settings (SSH, Wi-Fi)')

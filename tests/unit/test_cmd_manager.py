@@ -135,8 +135,8 @@ def test_base_image_close_skips_unmount_when_keep_mounted_true():
     assert unmountCalled['value'] is False
 
 
-def test_base_image_close_unmounts_when_mount_active_even_if_not_tracked():
-    """Default close should unmount when mount target is active even if _mountedByUs is falsey."""
+def test_base_image_close_does_not_unmount_tracked_false():
+    """Default close should NOT unmount when mount target is active but _mountedByUs is falsey."""
     manager = BaseImageManager.__new__(BaseImageManager)
     manager.mountPath = DEFAULT_MOUNT_PATH
     manager.keepMounted = False
@@ -151,7 +151,7 @@ def test_base_image_close_unmounts_when_mount_active_even_if_not_tracked():
     manager._is_mount_active = lambda: True
     manager.close()
 
-    assert unmountCalled['value'] is True
+    assert unmountCalled['value'] is False
 
 
 def test_base_image_unmount_non_interactive_failure_skips_prompt():

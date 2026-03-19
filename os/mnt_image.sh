@@ -44,7 +44,7 @@ find_boot_partition() {
         local loopDev="$1"
         local bootCandidate=""
 
-        bootCandidate="$(lsblk -nrpo NAME,FSTYPE "$loopDev" | awk '$2 ~ /^(vfat|fat16|fat32)$/ {print $1; exit}')"
+        bootCandidate="$(sudo lsblk -nrpo NAME,FSTYPE "$loopDev" | awk '$2 ~ /^(vfat|fat16|fat32)$/ {print $1; exit}')"
         echo "$bootCandidate"
 }
 
@@ -62,6 +62,8 @@ if [[ -z "$loop_dev" ]]; then
         exit 1
 fi
 
+udevadm settle
+
 root_partition_path="$(resolve_partition_path "$loop_dev" "$root_partition" || true)"
 if [[ -z "$root_partition_path" ]]; then
         echo "Could not determine root partition path for loop device $loop_dev partition $root_partition"
@@ -77,7 +79,12 @@ sudo mount "$root_partition_path" "$mount_path"
 
 if [[ -n "$boot_partition_path" && "$boot_partition_path" != "$root_partition_path" ]]; then
         echo "Boot partition: $boot_partition_path"
-        sudo mount "$boot_partition_path" "$mount_path/boot"
+        if [[ -d "$mount_path/boot/firmware" ]]; then
+                boot_mount_dir="$mount_path/boot/firmware"
+        else
+                boot_mount_dir="$mount_path/boot"
+        fi
+        sudo mount "$boot_partition_path" "$boot_mount_dir"
 fi
 
 bind_system_dirs "$mount_path"
@@ -87,7 +94,7 @@ if ! verify_mount_target "$mount_path" "Root"; then
 fi
 
 if [[ -n "$boot_partition_path" && "$boot_partition_path" != "$root_partition_path" ]]; then
-        if ! verify_mount_target "$mount_path/boot" "Boot"; then
+        if ! verify_mount_target "$boot_mount_dir" "Boot"; then
                 exit 1
         fi
 fi

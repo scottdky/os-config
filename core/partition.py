@@ -5,7 +5,12 @@ This operation allows expanding the raw disk image, resizing existing partitions
 distribute custom file layouts like /home or /data.
 """
 
+import sys
+from pathlib import Path
 from typing import Any
+
+# Ensure project root is in sys.path
+sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 
 from lib.operations import OperationBase, OperationLogRecord
 from lib.managers.base import BaseManager
@@ -167,4 +172,11 @@ class PartitionOperation(OperationBase):
             fstab.save(mgr)
 
         return OperationLogRecord(self.name, changed, errors=logs)
+
+
+if __name__ == '__main__':
+    from lib.operations import OperationPipeline
+    
+    pipeline = OperationPipeline([PartitionOperation()])
+    pipeline.run_cli("Partition and Filesystem Configuration")
 

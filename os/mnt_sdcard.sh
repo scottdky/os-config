@@ -24,13 +24,13 @@ run_unmount_cleanup() {
 
 resolve_root_partition() {
     local rootPart=""
-    rootPart="$(lsblk -nrpo NAME,FSTYPE "$device_path" | awk '$2 == "ext4" {print $1; exit}')"
+    rootPart="$(sudo lsblk -nrpo NAME,FSTYPE "$device_path" | awk '$2 == "ext4" {print $1; exit}')"
     echo "$rootPart"
 }
 
 resolve_boot_partition() {
     local bootPart=""
-    bootPart="$(lsblk -nrpo NAME,FSTYPE "$device_path" | awk '$2 ~ /^(vfat|fat16|fat32)$/ {print $1; exit}')"
+    bootPart="$(sudo lsblk -nrpo NAME,FSTYPE "$device_path" | awk '$2 ~ /^(vfat|fat16|fat32)$/ {print $1; exit}')"
     echo "$bootPart"
 }
 
@@ -56,7 +56,12 @@ sudo mount "$root_partition" "$mount_path"
 
 if [[ -n "$boot_partition" && "$boot_partition" != "$root_partition" ]]; then
     echo "Boot partition: $boot_partition"
-    sudo mount "$boot_partition" "$mount_path/boot"
+    if [[ -d "$mount_path/boot/firmware" ]]; then
+        boot_mount_dir="$mount_path/boot/firmware"
+    else
+        boot_mount_dir="$mount_path/boot"
+    fi
+    sudo mount "$boot_partition" "$boot_mount_dir"
 fi
 
 bind_system_dirs "$mount_path"
@@ -66,7 +71,7 @@ if ! verify_mount_target "$mount_path" "Root"; then
 fi
 
 if [[ -n "$boot_partition" && "$boot_partition" != "$root_partition" ]]; then
-    if ! verify_mount_target "$mount_path/boot" "Boot"; then
+    if ! verify_mount_target "$boot_mount_dir" "Boot"; then
         exit 1
     fi
 fi
