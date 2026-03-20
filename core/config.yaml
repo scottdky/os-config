@@ -47,6 +47,7 @@ bash_util:
         - nmap
         - lsof
         - net-tools
+        - dos2unix
     tools:
         - cdargs
         - aliases

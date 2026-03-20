@@ -38,7 +38,7 @@ class HardwareUart(OperationBase):
 
     def _get_current_state(self, mgr: BaseManager) -> bool:
         """Parse config.txt to determine if UART is currently enabled."""
-        config_path = mgr.get_boot_config_path()
+        config_path = mgr.get_boot_file_path('config.txt')
 
         content = mgr.read_file(config_path, sudo=True)
         # Match completely uncommented enable_uart=1 or dtparam=uart0=on
@@ -67,7 +67,7 @@ class HardwareUart(OperationBase):
     def apply(self, mgr: BaseManager, configs: Dict[str, Any]) -> OperationLogRecord:
         enableUart = configs.get('enable_uart', True)
         changed = False
-        configPath = mgr.get_boot_config_path()
+        configPath = mgr.get_boot_file_path('config.txt')
         prevState = self._get_current_state(mgr)
 
         # Apply Pin state
@@ -109,7 +109,7 @@ class BluetoothMapping(OperationBase):
 
     def _get_current_state(self, mgr: BaseManager) -> bool:
         """Parse config.txt to see if disable-bt is explicitly written."""
-        config_path = mgr.get_boot_config_path()
+        config_path = mgr.get_boot_file_path('config.txt')
 
         content = mgr.read_file(config_path, sudo=True)
         is_disabled = bool(re.search(r'^\s*dtoverlay\s*=\s*disable-bt\s*$', content, re.MULTILINE))
@@ -136,7 +136,7 @@ class BluetoothMapping(OperationBase):
         changed = False
 
         try:
-            configPath = mgr.get_boot_config_path()
+            configPath = mgr.get_boot_file_path('config.txt')
         except FileNotFoundError as e:
             return OperationLogRecord(self.NAME, changed, "Unknown", "Error", errors=[str(e)])
 
@@ -145,11 +145,11 @@ class BluetoothMapping(OperationBase):
         if bluetooth:
             changed |= mgr.set_config_line(configPath, 'dtoverlay=miniuart-bt', enable=True, sudo=True)
             changed |= mgr.set_config_line(configPath, 'dtoverlay=disable-bt', enable=False, sudo=True)
-            mgr.run('systemctl enable hciuart', sudo=True)
+            mgr.systemd_enable('hciuart', sudo=True)
         else:
             changed |= mgr.set_config_line(configPath, 'dtoverlay=miniuart-bt', enable=False, sudo=True)
             changed |= mgr.set_config_line(configPath, 'dtoverlay=disable-bt', enable=True, sudo=True)
-            mgr.run('systemctl disable hciuart', sudo=True)
+            mgr.systemd_disable('hciuart', sudo=True)
 
         return OperationLogRecord(self.NAME, changed,
             previousState=f"Enabled={prevState}",
@@ -258,12 +258,12 @@ class SerialConsole(OperationBase):
 
         if console:
             changed |= cmds.add(consoleArg)
-            mgr.run('systemctl unmask serial-getty@ttyS0.service', sudo=True)
-            mgr.run('systemctl unmask serial-getty@ttyAMA0.service', sudo=True)
-            mgr.run('systemctl enable serial-getty@ttyS0.service', sudo=True)
+            mgr.systemd_unmask('serial-getty@ttyS0.service', sudo=True)
+            mgr.systemd_unmask('serial-getty@ttyAMA0.service', sudo=True)
+            mgr.systemd_enable('serial-getty@ttyS0.service', sudo=True)
         else:
-            mgr.run('systemctl mask serial-getty@ttyS0.service', sudo=True)
-            mgr.run('systemctl mask serial-getty@ttyAMA0.service', sudo=True)
+            mgr.systemd_mask('serial-getty@ttyS0.service', sudo=True)
+            mgr.systemd_mask('serial-getty@ttyAMA0.service', sudo=True)
 
         if changed:
             saveCmdlineFile(root_path, cmds.contents())

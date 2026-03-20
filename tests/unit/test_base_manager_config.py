@@ -123,18 +123,18 @@ def test_backup_only_once_per_file():
     assert 'multiple.conf.bak' not in str(mgr.write_file.mock_calls)
     mgr.write_file.assert_called_once_with('/etc/multiple.conf', 'key1=v1\nkey2=v2\n', sudo=False)
 
-def test_get_boot_config_path_bookworm():
+def test_get_boot_file_path_bookworm():
     mgr = DummyManager()
     mgr.exists.side_effect = lambda path: path == '/boot/firmware/config.txt'
-    assert mgr.get_boot_config_path() == '/boot/firmware/config.txt'
+    assert mgr.get_boot_file_path('config.txt') == '/boot/firmware/config.txt'
 
-def test_get_boot_config_path_bullseye():
+def test_get_boot_file_path_bullseye():
     mgr = DummyManager()
     mgr.exists.side_effect = lambda path: path == '/boot/config.txt'
-    assert mgr.get_boot_config_path() == '/boot/config.txt'
+    assert mgr.get_boot_file_path('config.txt') == '/boot/config.txt'
 
-def test_get_boot_config_path_not_found():
+def test_get_boot_file_path_not_found():
     mgr = DummyManager()
     mgr.exists.return_value = False
     with pytest.raises(FileNotFoundError, match="Could not locate Raspberry Pi config.txt"):
-        mgr.get_boot_config_path()
+        mgr.get_boot_file_path('config.txt')

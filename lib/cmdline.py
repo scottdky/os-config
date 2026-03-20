@@ -76,28 +76,22 @@ class Cmdline:
         """Retrieve all the parts as a single string joined by spaces"""
         return ' '.join(self.parts)
 
-def _get_cmdline_path(mgr: BaseManager) -> str:
-    """Helper to detect if we should use /boot/firmware or /boot."""
-    if mgr.exists('/boot/firmware/cmdline.txt'):
-        return '/boot/firmware/cmdline.txt'
-    return '/boot/cmdline.txt'
-
 def loadCmdlineFile(mgr: BaseManager, backup: str | None = '.bck') -> str:
     """Return the contents of the cmdline.txt file, making a backup (if desired) in the process.
     To skip the backup, set backup=None
     """
-    fname = _get_cmdline_path(mgr)
-    
-    if not mgr.exists(fname):
+    try:
+        fname = mgr.get_boot_file_path('cmdline.txt')
+    except FileNotFoundError:
         return ""
-        
+
     contents = mgr.read_file(fname, sudo=True)
     if backup:
         mgr.write_file(f"{fname}{backup}", contents, sudo=True)
-        
+
     return contents
 
 def saveCmdlineFile(mgr: BaseManager, contents: str) -> None:
     """Given the new contents of the cmdline.txt file, replace the existing file with it."""
-    fname = _get_cmdline_path(mgr)
+    fname = mgr.get_boot_file_path('cmdline.txt')
     mgr.write_file(fname, contents.strip(), sudo=True)

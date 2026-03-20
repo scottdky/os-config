@@ -110,12 +110,10 @@ class SSHOperation(OperationBase):
             return 'disabled'
 
         else:
-            result = mgr.run('systemctl is-enabled ssh', sudo=False)
-            if result.returnCode == 0 and 'enabled' in result.stdout:
+            if mgr.systemd_is_enabled('ssh', sudo=False):
                 return 'enabled'
 
-            status = mgr.run('systemctl is-active ssh', sudo=False)
-            if status.returnCode == 0 and 'active' in status.stdout:
+            if mgr.systemd_is_active('ssh', sudo=False):
                 return 'enabled'
 
             return 'disabled'
@@ -187,9 +185,12 @@ class SSHOperation(OperationBase):
 
         else:
             if newState == 'enabled':
-                cmdResult = mgr.run('systemctl enable --now ssh', sudo=True)
+                success = mgr.systemd_enable('ssh', now=True, sudo=True)
             else:
-                cmdResult = mgr.run('systemctl disable --now ssh', sudo=True)
+                success = mgr.systemd_disable('ssh', now=True, sudo=True)
+
+            # Form dummy command result for following check block
+            cmdResult = type('obj', (object,), {'returnCode': 0 if success else 1, 'stderr': 'systemd manager action failed'})()
 
         if cmdResult and cmdResult.returnCode == 0:
             verified = SSHOperation.get_current_ssh_state(mgr)

@@ -82,25 +82,28 @@ class BaseManager:
         """Check if the target is an OS image (img file or sdcard)"""
         return False # Default to False; override in relevant manager subclasses
 
-    def get_boot_config_path(self) -> str:
+    def get_boot_file_path(self, fname: str) -> str:
         """
-        Get the correct path to the Raspberry Pi boot configuration file.
+        Get the correct path to a Raspberry Pi boot configuration file (e.g., config.txt or cmdline.txt).
 
         Additional info (multi-line): In Debian Bookworm and later, the boot partition is
         mounted at /boot/firmware. In older versions (like Bullseye), it was at /boot.
 
+        Args:
+            fname (str): The filename to search for (e.g., 'config.txt', 'cmdline.txt')
+
         Returns:
-            str: The exact path to the target's active config.txt file.
+            str: The exact path to the target's active config file.
 
         Raises:
-            FileNotFoundError: If config.txt cannot be found in known locations.
+            FileNotFoundError: If the file cannot be found in known locations.
         """
-        if self.exists('/boot/firmware/config.txt'):
-            return '/boot/firmware/config.txt'
-        if self.exists('/boot/config.txt'):
-            return '/boot/config.txt'
+        if self.exists(f'/boot/firmware/{fname}'):
+            return f'/boot/firmware/{fname}'
+        if self.exists(f'/boot/{fname}'):
+            return f'/boot/{fname}'
 
-        raise FileNotFoundError("Could not locate Raspberry Pi config.txt in /boot/firmware or /boot")
+        raise FileNotFoundError(f"Could not locate Raspberry Pi {fname} in /boot/firmware or /boot")
 
     def systemd_unmask(self, serviceName: str, sudo: bool = False) -> bool:
         """Unmask a systemd service.
@@ -115,21 +118,78 @@ class BaseManager:
         res = self.run(f"systemctl unmask {serviceName}", sudo=sudo)
         return res.returnCode == 0
 
-    def systemd_enable(self, serviceName: str, servicePath: str, targetName: str = "sysinit.target", sudo: bool = False) -> bool:
-        """Enable a systemd service by name.
-        
-        Note: The BaseManager implementation uses systemctl. Subclasses (like offline ImageManager) may override this to use file links directly.
-        
+    def systemd_mask(self, serviceName: str, sudo: bool = False) -> bool:
+        """Mask a systemd service.
+
         Args:
             serviceName (str): Name of the service (e.g. 'hwclock.service').
-            servicePath (str): Absolute target path of the unit file (used by offline overrides).
-            targetName (str): Systemd target to hook into. (used by offline overrides).
             sudo (bool): Whether to run as sudo.
 
         Returns:
             bool: True if the command succeeded.
         """
-        res = self.run(f"systemctl enable {serviceName}", sudo=sudo)
+        res = self.run(f"systemctl mask {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_enable(self, serviceName: str, servicePath: str | None = None, targetName: str = "sysinit.target", now: bool = False, sudo: bool = False) -> bool:
+        """Enable a systemd service by name.
+
+        Note: The BaseManager implementation uses systemctl. Subclasses (like offline ImageManager) may override this to use file links directly.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            servicePath (str | None): Absolute target path of the unit file (used by offline overrides).
+            targetName (str): Systemd target to hook into. (used by offline overrides).
+            now (bool): Whether to pass --now to start the service immediately.
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        nowFlag = " --now" if now else ""
+        res = self.run(f"systemctl enable{nowFlag} {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_disable(self, serviceName: str, targetName: str = "sysinit.target", now: bool = False, sudo: bool = False) -> bool:
+        """Disable a systemd service by name.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            targetName (str): Systemd target it hooks into. (used by offline overrides).
+            now (bool): Whether to pass --now to stop the service immediately.
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        nowFlag = " --now" if now else ""
+        res = self.run(f"systemctl disable{nowFlag} {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_is_enabled(self, serviceName: str, sudo: bool = False) -> bool:
+        """Check if a systemd service is enabled.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the service is enabled.
+        """
+        res = self.run(f"systemctl is-enabled {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_is_active(self, serviceName: str, sudo: bool = False) -> bool:
+        """Check if a systemd service is currently active.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the service is active.
+        """
+        res = self.run(f"systemctl is-active {serviceName}", sudo=sudo)
         return res.returnCode == 0
 
     def log_operation(self, operationRecord: Any) -> None:

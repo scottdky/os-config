@@ -109,20 +109,38 @@ class BaseImageManager(BaseManager):
         res = self.run(f"rm -f {targetPaths}", sudo=sudo)
         return res.returnCode == 0
 
-    def systemd_enable(self, serviceName: str, servicePath: str, targetName: str = "sysinit.target", sudo: bool = False) -> bool:
+    def systemd_mask(self, serviceName: str, sudo: bool = False) -> bool:
+        """Mask a systemd service directly on the filesystem for offline images.
+
+        Args:
+            serviceName (str): Name of the service.
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        linkPath = f"/etc/systemd/system/{serviceName}"
+        res = self.run(f"ln -sf /dev/null {linkPath}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_enable(self, serviceName: str, servicePath: str | None = None, targetName: str = "sysinit.target", now: bool = False, sudo: bool = False) -> bool:
         """Enable a systemd service by manually linking it for offline images.
 
         Note: The BaseManager implementation uses systemctl. Subclasses (like offline ImageManager) may override this to use file links directly.
 
         Args:
             serviceName (str): Name of the service (e.g. 'hwclock.service').
-            servicePath (str): Absolute target path of the unit file (used by offline overrides).
+            servicePath (str | None): Absolute target path of the unit file (used by offline overrides).
             targetName (str): Systemd target to hook into. (used by offline overrides).
+            now (bool): Whether to pass --now (ignored in offline manager).
             sudo (bool): Whether to run as sudo.
 
         Returns:
             bool: True if the command succeeded.
         """
+        if not servicePath:
+            # Fallback if no target path is supplied for symlink, look up common paths
+            servicePath = f"/lib/systemd/system/{serviceName}"
 
         wantsDir = f"/etc/systemd/system/{targetName}.wants"
         self.run(f"mkdir -p {wantsDir}", sudo=sudo)
@@ -130,6 +148,37 @@ class BaseImageManager(BaseManager):
         linkPath = f"{wantsDir}/{serviceName}"
         res = self.run(f"ln -sf {servicePath} {linkPath}", sudo=sudo)
         return res.returnCode == 0
+
+    def systemd_disable(self, serviceName: str, targetName: str = "sysinit.target", now: bool = False, sudo: bool = False) -> bool:
+        """Disable a systemd service by removing its wants link for offline images.
+
+        Args:
+            serviceName (str): Name of the service.
+            targetName (str): Systemd target it hooks into.
+            now (bool): Whether to pass --now (ignored in offline manager).
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        linkPath = f"/etc/systemd/system/{targetName}.wants/{serviceName}"
+        res = self.run(f"rm -f {linkPath}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_is_enabled(self, serviceName: str, sudo: bool = False) -> bool:
+        """Check if a systemd service is enabled by querying symlink state or calling systemctl softly."""
+        # Check standard wants paths first since systemctl might complain without dbus
+        wantsOut = self.run(f"find /etc/systemd/system/*.wants -name {shlex.quote(serviceName)} 2>/dev/null", sudo=sudo)
+        if wantsOut.returnCode == 0 and wantsOut.stdout.strip():
+            return True
+
+        # Fallback to systemctl without dbus
+        res = self.run(f"systemctl --quiet is-enabled {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_is_active(self, serviceName: str, sudo: bool = False) -> bool:
+        """Check if a systemd service is currently active. Never true for offline mounts."""
+        return False
 
     def _validate_target(self) -> None:
         raise NotImplementedError("Subclasses must implement _validate_target()")

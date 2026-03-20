@@ -184,7 +184,7 @@ def expand_partition(mgr: BaseImageManager, partition_number: int, size_mb: int 
 
 def remove_raspian_fs_resize(mgr: BaseImageManager) -> None:
     mgr.run("rm -f /etc/init.d/resize2fs_once", sudo=True)
-    mgr.run("systemctl disable resize2fs_once || true", sudo=True)
+    mgr.systemd_disable("resize2fs_once", sudo=True)
 
 def inject_custom_resize(mgr: BaseImageManager, target_partition_num: int) -> None:
     custom_script = r'''#!/bin/sh

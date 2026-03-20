@@ -10,7 +10,7 @@ from lib.managers.base import CommandResult
 def mock_mgr():
     """Fixture to provide a mocked Manager."""
     mgr = MagicMock()
-    mgr.get_boot_config_path.return_value = '/boot/firmware/config.txt'
+    mgr.get_boot_file_path.return_value = '/boot/firmware/config.txt'
 
     # Assume hw clock service doesn't exist by default
     mgr.exists.return_value = False
@@ -147,7 +147,7 @@ def test_rtc_prompt_missing_with_invalid_device_in_allConfigs(mock_mgr):
         'device': 'some_invalid_device'
     }
     res = op.prompt_missing_values(mock_mgr, configs_to_prompt, allConfigs)
-    
+
     assert res['addr'] is None
 
 def test_rtc_prompt_aborted_device(mock_mgr, monkeypatch):
@@ -155,18 +155,18 @@ def test_rtc_prompt_aborted_device(mock_mgr, monkeypatch):
     op = RtcOperation()
     monkeypatch.setattr('core.rtc.get_single_selection', lambda x: None)
     configs_to_prompt = {'device': None}
-    
+
     with pytest.raises(OperationAbortedError, match="User aborted RTC device selection."):
         op.prompt_missing_values(mock_mgr, configs_to_prompt, {})
 
 def test_rtc_prompt_aborted_sda(mock_mgr, monkeypatch):
     """Test user aborts configuring SDA pin."""
     op = RtcOperation()
-    
+
     def fake_prompt(_prompt_text, defaultValue=""):
         return ""
     op._prompt_text_value = fake_prompt
-    
+
     configs_to_prompt = {'sdapin': None}
     with pytest.raises(OperationAbortedError, match="User aborted SDA pin selection."):
         op.prompt_missing_values(mock_mgr, configs_to_prompt, {})
@@ -174,11 +174,11 @@ def test_rtc_prompt_aborted_sda(mock_mgr, monkeypatch):
 def test_rtc_prompt_aborted_scl(mock_mgr, monkeypatch):
     """Test user aborts configuring SCL pin."""
     op = RtcOperation()
-    
+
     def fake_prompt(_prompt_text, defaultValue=""):
         return ""
     op._prompt_text_value = fake_prompt
-    
+
     configs_to_prompt = {'sclpin': None}
     with pytest.raises(OperationAbortedError, match="User aborted SCL pin selection."):
         op.prompt_missing_values(mock_mgr, configs_to_prompt, {})

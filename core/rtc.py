@@ -118,7 +118,7 @@ class RtcOperation(OperationBase):
             errors.append(f"Failed to install i2c-tools/chrony: {pkgResult.stderr.strip()}")
 
         # Enable I2C in boot configuration
-        bootConfigPath = mgr.get_boot_config_path()
+        bootConfigPath = mgr.get_boot_file_path('config.txt')
         if mgr.set_config_line(bootConfigPath, 'dtparam=i2c_arm=on', sudo=True):
             changed = True
 
