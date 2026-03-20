@@ -46,8 +46,8 @@ class _PromptInputOperation(OperationBase):
         super().__init__(moduleName='test', name='prompt-op', requiredConfigs=requiredConfigs)
         self.applyCalls = 0
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object]) -> dict[str, object]:
-        _ = mgr, configsToPrompt
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object], allConfigs: dict[str, object]) -> dict[str, object]:
+        _ = mgr, configsToPrompt, allConfigs
         value = self._prompt_text_value('Enter value')
         return {'value': value}
 

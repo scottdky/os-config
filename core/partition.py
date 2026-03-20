@@ -39,9 +39,9 @@ class PartitionOperation(OperationBase):
         # Optional so we don't strictly require it, we use defaults
         return self._config.get('partition', {})
 
-    def prompt_missing_values(self, mgr: BaseManager, configs: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt for any missing config values."""
-        return configs
+        return configsToPrompt
 
     def is_manager_compatible(self, mgr: BaseManager) -> tuple[bool, str]:
         if not mgr.is_os_image():

@@ -89,6 +89,48 @@ class BaseImageManager(BaseManager):
             shutil.copy(sourcePath, localPath)
         print(f"Downloaded (chroot) {remotePath} -> {localPath}")
 
+    def systemd_unmask(self, serviceName: str, sudo: bool = False) -> bool:
+        """Unmask a systemd service directly on the filesystem for offline images.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+
+        paths = [
+            f"/etc/systemd/system/{serviceName}",
+            f"/lib/systemd/system/{serviceName}",
+            f"/usr/lib/systemd/system/{serviceName}"
+        ]
+        targetPaths = " ".join(paths)
+        res = self.run(f"rm -f {targetPaths}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_enable(self, serviceName: str, servicePath: str, targetName: str = "sysinit.target", sudo: bool = False) -> bool:
+        """Enable a systemd service by manually linking it for offline images.
+
+        Note: The BaseManager implementation uses systemctl. Subclasses (like offline ImageManager) may override this to use file links directly.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            servicePath (str): Absolute target path of the unit file (used by offline overrides).
+            targetName (str): Systemd target to hook into. (used by offline overrides).
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+
+        wantsDir = f"/etc/systemd/system/{targetName}.wants"
+        self.run(f"mkdir -p {wantsDir}", sudo=sudo)
+
+        linkPath = f"{wantsDir}/{serviceName}"
+        res = self.run(f"ln -sf {servicePath} {linkPath}", sudo=sudo)
+        return res.returnCode == 0
+
     def _validate_target(self) -> None:
         raise NotImplementedError("Subclasses must implement _validate_target()")
 

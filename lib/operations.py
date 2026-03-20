@@ -15,6 +15,12 @@ sys.path.append(str(Path(__file__).resolve().parents[1])) # PROJECT_ROOT
 from lib.config import resolve_config_values
 from lib.managers import BaseManager, get_single_selection, interactive_create_manager
 
+import inspect
+
+class OperationAbortedError(Exception):
+    """Raised when an operation is intentionally aborted by the user."""
+    pass
+
 
 @dataclass
 class OperationLogRecord:
@@ -118,7 +124,7 @@ class OperationBase(ABC):
 
         if missingKeys:
             configsToPrompt = {key: allConfigs.get(key) for key in missingKeys}
-            promptedValues = self.prompt_missing_values(mgr, configsToPrompt)
+            promptedValues = self.prompt_missing_values(mgr, configsToPrompt, allConfigs)
             if not isinstance(promptedValues, dict):
                 raise ValueError('prompt_missing_values must return a dict[str, Any] of prompted values')
             allConfigs.update(promptedValues)
@@ -127,7 +133,7 @@ class OperationBase(ABC):
         return allConfigs
 
     @abstractmethod
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt and collect missing values.
 
         Additional info (multi-line): subclasses own prompting behavior
@@ -137,6 +143,7 @@ class OperationBase(ABC):
         Args:
             mgr (BaseManager): Active manager instance.
             configsToPrompt (dict[str, Any]): Unresolved keys that need prompts.
+            allConfigs (dict[str, Any]): Currently resolved configuration.
 
         Returns:
             dict[str, Any]: Prompted key-value pairs.
@@ -313,8 +320,19 @@ class OperationPipeline:
                 preparedOperations: list[tuple[OperationBase, dict[str, Any]]] = []
                 for operation in selectedOperations:
                     currentOperationName = operation.name
-                    preparedConfigs = operation.gather_config(mgr)
-                    preparedOperations.append((operation, preparedConfigs))
+                    try:
+                        preparedConfigs = operation.gather_config(mgr)
+                        preparedOperations.append((operation, preparedConfigs))
+                    except OperationAbortedError as abortEx:
+                        mgr.log_operation(OperationLogRecord(
+                            operationName=currentOperationName,
+                            changed=False,
+                            previousState=None,
+                            currentState=f"Skipped: {abortEx}",
+                            errors=[],
+                            fatal=False
+                        ))
+                        continue
 
                 for operation, preparedConfigs in preparedOperations:
                     currentOperationName = operation.name
@@ -334,6 +352,9 @@ class OperationPipeline:
                     selectedOperation=selectedOperation,
                 )
                 self._print_report(report)
+                if isinstance(exc, ValueError):
+                    print(f"\nConfiguration Error: {exc}")
+                    sys.exit(1)
                 raise
 
             report = OperationRunReport(

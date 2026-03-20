@@ -9,7 +9,7 @@ from typing import Any
 from typing import cast
 
 from lib.managers import BaseManager, get_multi_selection
-from lib.operations import OperationBase, OperationLogRecord, OperationRunReport
+from lib.operations import OperationBase, OperationLogRecord, OperationRunReport, OperationAbortedError
 
 
 @dataclass
@@ -314,8 +314,12 @@ def run_operations_with_manager(mgr: BaseManager, operations: list[OperationBase
         preparedOperations: list[tuple[OperationBase, dict[str, Any]]] = []
         for operation in operations:
             currentOperationName = operation.name
-            preparedConfigs = operation.gather_config(mgr)
-            preparedOperations.append((operation, preparedConfigs))
+            try:
+                preparedConfigs = operation.gather_config(mgr)
+                preparedOperations.append((operation, preparedConfigs))
+            except OperationAbortedError as abortEx:
+                mgr.log_operation(OperationLogRecord(currentOperationName, False, None, f"Skipped: {abortEx}", [], False))
+                continue
 
         for operation, preparedConfigs in preparedOperations:
             currentOperationName = operation.name

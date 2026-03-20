@@ -42,7 +42,7 @@ class _BoolOperation(OperationBase):
         _ = mgr
         return {}
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object]) -> dict[str, object]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object], allConfigs: dict[str, object]) -> dict[str, object]:
         _ = mgr, configsToPrompt
         return {}
 
@@ -61,7 +61,7 @@ class _RecordOperation(OperationBase):
         _ = mgr
         return {}
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object]) -> dict[str, object]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object], allConfigs: dict[str, object]) -> dict[str, object]:
         _ = mgr, configsToPrompt
         return {}
 
@@ -86,7 +86,7 @@ class _FailingOperation(OperationBase):
         _ = mgr
         return {}
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object]) -> dict[str, object]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object], allConfigs: dict[str, object]) -> dict[str, object]:
         _ = mgr, configsToPrompt
         return {}
 
@@ -111,7 +111,7 @@ class _TrackingOperation(OperationBase):
             raise self.gatherException
         return {'ok': True}
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object]) -> dict[str, object]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, object], allConfigs: dict[str, object]) -> dict[str, object]:
         _ = mgr, configsToPrompt
         return {}
 
@@ -195,7 +195,7 @@ def test_pipeline_all_preflight_aborts_before_any_apply(monkeypatch):
 
     monkeypatch.setattr(argparse.ArgumentParser, 'parse_args', lambda self: argparse.Namespace(operation='all'))
 
-    with pytest.raises(ValueError, match='config missing for second-op'):
+    with pytest.raises(SystemExit):
         pipeline.run_cli('test preflight abort')
 
     assert first.gatherCalls == 1

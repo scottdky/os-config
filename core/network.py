@@ -48,7 +48,7 @@ class SSHOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.SSH: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='network', name=self.SSH, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """
         Prompt for missing SSH config value.
 
@@ -235,7 +235,7 @@ class WiFiOperation(OperationBase):
     def __init__(self) -> None:
         super().__init__(moduleName='network', name=self.WIFI, requiredConfigs=self.REQUIRED_CONFIGS)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt for missing Wi-Fi config values."""
         results = {}
 

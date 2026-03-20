@@ -102,6 +102,36 @@ class BaseManager:
 
         raise FileNotFoundError("Could not locate Raspberry Pi config.txt in /boot/firmware or /boot")
 
+    def systemd_unmask(self, serviceName: str, sudo: bool = False) -> bool:
+        """Unmask a systemd service.
+
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        res = self.run(f"systemctl unmask {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
+    def systemd_enable(self, serviceName: str, servicePath: str, targetName: str = "sysinit.target", sudo: bool = False) -> bool:
+        """Enable a systemd service by name.
+        
+        Note: The BaseManager implementation uses systemctl. Subclasses (like offline ImageManager) may override this to use file links directly.
+        
+        Args:
+            serviceName (str): Name of the service (e.g. 'hwclock.service').
+            servicePath (str): Absolute target path of the unit file (used by offline overrides).
+            targetName (str): Systemd target to hook into. (used by offline overrides).
+            sudo (bool): Whether to run as sudo.
+
+        Returns:
+            bool: True if the command succeeded.
+        """
+        res = self.run(f"systemctl enable {serviceName}", sudo=sudo)
+        return res.returnCode == 0
+
     def log_operation(self, operationRecord: Any) -> None:
         """Append one operation record to manager-owned operation logs.
 

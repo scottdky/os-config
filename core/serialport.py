@@ -48,7 +48,7 @@ class HardwareUart(OperationBase):
             return True
         return False
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: Dict[str, Any]) -> Dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         filledConfigs = {}
         currState = self._get_current_state(mgr)
         for key in configsToPrompt:
@@ -115,7 +115,7 @@ class BluetoothMapping(OperationBase):
         is_disabled = bool(re.search(r'^\s*dtoverlay\s*=\s*disable-bt\s*$', content, re.MULTILINE))
         return not is_disabled
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: Dict[str, Any]) -> Dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         filledConfigs = {}
         currState = self._get_current_state(mgr)
         for key in configsToPrompt:
@@ -207,7 +207,7 @@ class SerialConsole(OperationBase):
 
         return False, 115200
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: Dict[str, Any]) -> Dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         filledConfigs = {}
         currConsole, currBaud = self._get_current_console_state(mgr)
 

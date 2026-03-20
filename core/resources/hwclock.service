@@ -1,0 +1,13 @@
+[Unit]
+Description=Sync hardware clock
+DefaultDependencies=no
+Before=sysinit.target shutdown.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/hwclock --hctosys
+ExecStop=/sbin/hwclock --systohc
+
+[Install]
+WantedBy=sysinit.target

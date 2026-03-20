@@ -71,7 +71,7 @@ class TimezoneOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.TIMEZONE: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='region', name=self.TIMEZONE, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt user to select a timezone if missing from config.
 
         Args:
@@ -210,7 +210,7 @@ class LocaleOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.LOCALE: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='region', name=self.LOCALE, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt user to select a timezone if missing from config.
 
         Args:

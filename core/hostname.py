@@ -51,7 +51,7 @@ class HostnameOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.HOSTNAME: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='hostname', name=self.HOSTNAME, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt for missing hostname value.
 
         Args:
@@ -158,7 +158,7 @@ class UsernameOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.USERNAME: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='hostname', name=self.USERNAME, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt for missing username value.
 
         Args:
@@ -255,7 +255,7 @@ class PasswordOperation(OperationBase):
         requiredConfigs: dict[str, dict[str, Any]] = {self.PASSWORD: self.REQUIRED_CONFIGS}
         super().__init__(moduleName='hostname', name=self.PASSWORD, requiredConfigs=requiredConfigs)
 
-    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any]) -> dict[str, Any]:
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt for missing password value.
 
         Args:
