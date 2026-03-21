@@ -192,6 +192,51 @@ class BaseManager:
         res = self.run(f"systemctl is-active {serviceName}", sudo=sudo)
         return res.returnCode == 0
 
+    def is_pkg_installed(self, name: str) -> bool:
+        """Check if a Debian package is currently installed."""
+        res = self.run(f"dpkg-query -W -f='${{Status}}' {shlex.quote(name)} 2>/dev/null", sudo=False)
+        return "install ok installed" in res.stdout
+
+    def install_pkg(self, name: str) -> bool:
+        """Installs a Debian package if it is not already installed.
+
+        Args:
+            name (str): Name of the package to install.
+
+        Returns:
+            bool: True if the package was newly installed, False if it was already present.
+
+        Raises:
+            RuntimeError: If the underlying installation command fails.
+        """
+        if self.is_pkg_installed(name):
+            return False
+        res = self.run(f"DEBIAN_FRONTEND=noninteractive apt-get install -y {shlex.quote(name)}", sudo=True)
+        if res.returnCode != 0:
+            raise RuntimeError(f"Failed to install package {name}: {res.stderr}")
+        return True
+
+    def remove_pkg(self, name: str, purge: bool = False) -> bool:
+        """Removes a Debian package if it is currently installed.
+
+        Args:
+            name (str): Name of the package to remove.
+            purge (bool): Whether to purge configuration files.
+
+        Returns:
+            bool: True if the package was removed, False if it was not installed.
+
+        Raises:
+            RuntimeError: If the underlying removal command fails.
+        """
+        if not self.is_pkg_installed(name):
+            return False
+        purgeFlag = "--purge " if purge else ""
+        res = self.run(f"DEBIAN_FRONTEND=noninteractive apt-get remove -y {purgeFlag}{shlex.quote(name)}", sudo=True)
+        if res.returnCode != 0:
+            raise RuntimeError(f"Failed to remove package {name}: {res.stderr}")
+        return True
+
     def log_operation(self, operationRecord: Any) -> None:
         """Append one operation record to manager-owned operation logs.
 
