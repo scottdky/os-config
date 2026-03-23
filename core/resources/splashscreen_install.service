@@ -1,0 +1,12 @@
+[Unit]
+Description=Plymouth Splashscreen Installation on First Boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/bin/splashscreen_install.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
