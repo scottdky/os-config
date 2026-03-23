@@ -637,10 +637,27 @@ class BaseManager:
                     f'cp {shlex.quote(localPath)} {shlex.quote(destPath)}',
                     sudo=True
                 )
+                
+                # Fallback for FUSE root-squash issues where root environment cannot read user files
                 if code != 0:
-                    context = f" {label}" if label else ''
-                    #print(f"Error copying file{context}: {stderr}")
-                    return
+                    tmpPath = None
+                    try:
+                        fd, tmpPath = tempfile.mkstemp()
+                        os.close(fd)
+                        
+                        shutil.copyfile(localPath, tmpPath)
+                        
+                        _, fallback_stderr, fallback_code = self.run_local(
+                            f'cp {shlex.quote(tmpPath)} {shlex.quote(destPath)}',
+                            sudo=True
+                        )
+                        if fallback_code != 0:
+                            context = f" {label}" if label else ''
+                            #print(f"Error copying file via fallback{context}: {fallback_stderr}")
+                            return
+                    finally:
+                        if tmpPath and os.path.exists(tmpPath):
+                            os.unlink(tmpPath)
             else:
                 shutil.copy2(localPath, destPath)
 
