@@ -1,0 +1,6 @@
+# /etc/udev/rules.d/99-usb-automount.rules
+# On insertion: Create a transient systemd mount unit asynchronously on a tmpfs path
+ACTION=="add", KERNEL=="sd[a-z][0-9]*", ENV{ID_FS_USAGE}=="filesystem", RUN+="/usr/bin/systemd-mount --no-block --collect $devnode /run/media/%k"
+
+# On removal: Unmount and clean up the transient unit
+ACTION=="remove", KERNEL=="sd[a-z][0-9]*", ENV{ID_FS_USAGE}=="filesystem", RUN+="/usr/bin/systemd-mount --umount /run/media/%k"
