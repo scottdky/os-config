@@ -66,6 +66,11 @@ class KioskOperation(OperationBase):
         """Sets up the kiosk and webserver systemd services."""
         changed = False
 
+        # Create scripts directory for pi user
+        target_scripts_dir = "/home/pi/bin/scripts"
+        mgr.run(f"mkdir -p {target_scripts_dir}", sudo=True)
+        mgr.run("chown -R pi:pi /home/pi/bin", sudo=True)
+
         # Paths
         base_path = Path(__file__).resolve().parent
         kiosk_service_src = base_path / 'resources' / 'kiosk.service'
@@ -73,6 +78,18 @@ class KioskOperation(OperationBase):
 
         webserver_service_src = base_path / 'resources' / 'webserver.service'
         webserver_service_tgt = '/etc/systemd/system/webserver.service'
+
+        startkiosk_script_src = base_path / 'resources' / 'startkiosk.sh'
+        startkiosk_script_tgt = f'{target_scripts_dir}/startkiosk.sh'
+
+        # Kiosk Script provision
+        kiosk_script_local = startkiosk_script_src.read_text(encoding='utf-8')
+        kiosk_script_remote = mgr.read_file(startkiosk_script_tgt, sudo=True)
+        if kiosk_script_local != kiosk_script_remote:
+            mgr.put(str(startkiosk_script_src), startkiosk_script_tgt, sudo=True)
+            mgr.run(f'chmod +x {startkiosk_script_tgt}', sudo=True)
+            mgr.run(f'chown pi:pi {startkiosk_script_tgt}', sudo=True)
+            changed = True
 
         # Kiosk Service
         kiosk_content_local = kiosk_service_src.read_text(encoding='utf-8')
@@ -123,6 +140,79 @@ class KioskOperation(OperationBase):
         return OperationLogRecord(self.KIOSK, changed, None, currentState, errors)
 
 
+class ScreenDimmerOperation(OperationBase):
+    """Operation class for installing and staging the Wayland screen dimmer."""
+
+    SCREEN_DIMMER = 'screendimmer'
+    REQUIRED_CONFIGS = {}
+
+    def __init__(self) -> None:
+        super().__init__(moduleName='kiosk', name=self.SCREEN_DIMMER, requiredConfigs=self.REQUIRED_CONFIGS)
+
+    def is_manager_compatible(self, mgr: BaseManager) -> tuple[bool, str]:
+        if not mgr.is_raspi_os():
+            return False, "Target OS is not Raspberry Pi OS."
+        if not mgr.is_os_image():
+            return False, "Target must be a mounted OS image."
+        return super().is_manager_compatible(mgr)
+
+    def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
+        """Prompt user for missing configuration values."""
+        return {}
+
+    def apply(self, mgr: BaseManager, configs: dict[str, Any]) -> OperationLogRecord:
+        """Apply the screen dimmer script changes.
+
+        Args:
+            mgr (BaseManager): Active manager instance.
+            configs (dict[str, Any]): Resolved config values.
+
+        Returns:
+            OperationLogRecord: Operation record.
+        """
+        changed = False
+        errors: list[str] = []
+
+        print("Setting up Screen Dimmer environment...")
+
+        try:
+            # Install necessary packages for Wayland idle/backlight management
+            for pkg in ['swayidle', 'brightnessctl']:
+                changed |= mgr.install_pkg(pkg)
+
+            # Ensure 'pi' user has permissions to modify backlight via brightnessctl
+            # (which uses systemd/udev rules that allow users in 'video' group to change it natively)
+            if mgr.run('sudo usermod -aG video pi').returnCode == 0:
+                changed = True
+
+            # Stage the dimmer script
+            targetScriptsDir = "/home/pi/bin/scripts"
+            targetScript = f"{targetScriptsDir}/startdimmer.sh"
+
+            mgr.run(f"mkdir -p {targetScriptsDir}", sudo=True)
+            mgr.run("chown -R pi:pi /home/pi/bin", sudo=True)
+
+            srcScript = Path(__file__).resolve().parent / 'resources' / 'startdimmer.sh'
+            script_local = srcScript.read_text(encoding='utf-8')
+            script_remote = mgr.read_file(targetScript, sudo=True)
+
+            if script_local != script_remote:
+                mgr.put(str(srcScript), targetScript, sudo=True)
+                mgr.run(f"chmod +x {targetScript}", sudo=True)
+                mgr.run(f"chown pi:pi {targetScript}", sudo=True)
+                changed = True
+
+        except Exception as e:
+            errors.append(f"Failed configuring screen dimmer: {str(e)}")
+
+        currentState = "System staged for Wayland idle screen dimming." if not errors else "Screen dimmer configuration failed."
+
+        if changed:
+            print("...Done configuring screen dimmer.")
+
+        return OperationLogRecord(self.SCREEN_DIMMER, changed, None, currentState, errors)
+
+
 if __name__ == '__main__':
-    pipeline = OperationPipeline([KioskOperation()])
-    pipeline.run_cli('Configure Wayland Kiosk Mode')
+    pipeline = OperationPipeline([KioskOperation(), ScreenDimmerOperation()])
+    pipeline.run_cli('Configure Wayland Kiosk Mode and Screen Dimmer')
