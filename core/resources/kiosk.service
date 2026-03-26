@@ -1,0 +1,19 @@
+[Unit]
+Description=Kiosk Wayland Session
+After=multi-user.target graphical.target webserver.service
+
+[Service]
+User=pi
+TTYPath=/dev/tty1
+PAMName=login
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+Environment="WLR_NO_HARDWARE_CURSORS=1"
+Environment="XCURSOR_THEME=transparent"
+Restart=always
+TimeoutStartSec=10
+ExecStart=/usr/bin/cage -d -- /usr/bin/chromium-browser http://localhost:80 --kiosk --start-fullscreen --no-sandbox --noerrdialogs --disable-infobars --no-first-run --ozone-platform=wayland --user-data-dir=/tmp/chromium-kiosk --disable-session-crashed-bubble --hide-scrollbars --disable-pinch --overscroll-history-navigation=0 --disable-gpu-program-cache --disable-extensions --safebrowsing-disable-auto-update --disable-client-side-phishing-detection --check-for-update-interval=1 --simulate-critical-update --incognito --disk-cache-dir=/dev/null --disk-cache-size=1 --enable-features=OverlayScrollbar --start-maximized
+StandardError=journal
+
+[Install]
+WantedBy=default.target
