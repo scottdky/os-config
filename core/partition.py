@@ -164,7 +164,8 @@ class PartitionOperation(OperationBase):
 
             # Step B: Register in /etc/fstab
             # Ensure it's not already in fstab from a previous broken run
-            if not fstab.inList(f"LABEL={label}"):
+            device_str = f"LABEL={label}"
+            if not any(l.parts and l.parts.get('device') == device_str for l in fstab.lines):
                 new_line = f"LABEL={label}\t/{label}\t{p['fs']}\tdefaults,noatime\t0\t2"
                 fstab.lines.append(FstabLine(new_line))
 
@@ -176,7 +177,7 @@ class PartitionOperation(OperationBase):
 
 if __name__ == '__main__':
     from lib.operations import OperationPipeline
-    
+
     pipeline = OperationPipeline([PartitionOperation()])
     pipeline.run_cli("Partition and Filesystem Configuration")
 

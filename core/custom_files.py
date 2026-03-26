@@ -53,8 +53,17 @@ class CustomFilesOperation(OperationBase):
             # Route 1: Put Local File
             if hasattr(cfg, 'get') and local_source:
                 try:
-                    mgr.put(local_source, target, sudo=True)
-                    changed = True
+                    # Check if contents match before put
+                    needs_update = True
+                    if mgr.exists(target):
+                        with open(local_source, 'r') as f:
+                            local_content = f.read()
+                        if mgr.read_file(target, sudo=True) == local_content:
+                            needs_update = False
+
+                    if needs_update:
+                        mgr.put(local_source, target, sudo=True)
+                        changed = True
                 except Exception as e:
                     errors.append(f"Could not copy {local_source} to {target}: {e}")
 

@@ -186,8 +186,7 @@ class SerialConsole(OperationBase):
 
     def _get_current_console_state(self, mgr: BaseManager) -> tuple[bool, int]:
         """Check cmdline.txt for existing console= flag and extract baudrate."""
-        root_path = getattr(mgr, 'mountPath', '/')
-        existing = loadCmdlineFile(root_path)
+        existing = loadCmdlineFile(mgr)
         cmds = Cmdline(existing)
 
         args = cmds.find('console=serial0')
@@ -241,8 +240,7 @@ class SerialConsole(OperationBase):
         changed = False
         prevConsole, prevBaud = self._get_current_console_state(mgr)
 
-        root_path = getattr(mgr, 'mountPath', '/')
-        oldCmdline = loadCmdlineFile(root_path)
+        oldCmdline = loadCmdlineFile(mgr)
         cmds = Cmdline(oldCmdline)
 
         consoleArg = f"console=serial0,{baudrate}"
@@ -266,7 +264,7 @@ class SerialConsole(OperationBase):
             mgr.systemd_mask('serial-getty@ttyAMA0.service', sudo=True)
 
         if changed:
-            saveCmdlineFile(root_path, cmds.contents())
+            saveCmdlineFile(mgr, cmds.contents())
 
         return OperationLogRecord(self.NAME, changed,
             previousState=f"Console={prevConsole}, Baud={prevBaud}",
