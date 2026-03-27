@@ -21,7 +21,12 @@ class KioskOperation(OperationBase):
     """Operation class for setting up Wayland kiosk mode."""
 
     KIOSK = 'kiosk'
-    REQUIRED_CONFIGS = {}
+    REQUIRED_CONFIGS = {
+        'loading_style': {
+            'type': 'str',
+            'prompt': 'Select loading screen style'
+        }
+    }
 
     def __init__(self) -> None:
         super().__init__(moduleName='kiosk', name=self.KIOSK, requiredConfigs=self.REQUIRED_CONFIGS)
@@ -35,7 +40,21 @@ class KioskOperation(OperationBase):
 
     def prompt_missing_values(self, mgr: BaseManager, configsToPrompt: dict[str, Any], allConfigs: dict[str, Any]) -> dict[str, Any]:
         """Prompt user for missing configuration values."""
-        return {}
+        results = {}
+
+        if 'loading_style' in configsToPrompt:
+            choices = ['black', 'spinner', 'text']
+            sel = self.prompt_menu_value(self.REQUIRED_CONFIGS['loading_style']['prompt'], choices, 'spinner')
+
+            style = choices[sel] if sel >= 0 else 'spinner'
+            results['loading_style'] = style
+
+            if style == 'text' and 'loading_text' not in allConfigs:
+                prompt = "Enter text for the loading screen [{default}]: "
+                ans = self._prompt_text_value(prompt, "System Starting...").strip()
+                results['loading_text'] = ans if ans else "System Starting..."
+
+        return results
 
     def _install_packages(self, mgr: BaseManager) -> bool:
         """Installs the necessary Wayland, Chromium, and Kiosk dependency packages."""
@@ -47,7 +66,6 @@ class KioskOperation(OperationBase):
             'chromium-browser',
             'xcursor-transparent-theme',
             'git',
-            'screen',
             'libavahi-compat-libdnssd1',
             'python3-pip',
             'python3-dev'
@@ -62,8 +80,8 @@ class KioskOperation(OperationBase):
 
         return changed
 
-    def _setup_services(self, mgr: BaseManager) -> bool:
-        """Sets up the kiosk and webserver systemd services."""
+    def _setup_services(self, mgr: BaseManager, configs: dict[str, Any]) -> bool:
+        """Sets up the kiosk display and loading page."""
         changed = False
 
         # Create scripts directory for pi user
@@ -75,9 +93,6 @@ class KioskOperation(OperationBase):
         base_path = Path(__file__).resolve().parent
         kiosk_service_src = base_path / 'resources' / 'kiosk.service'
         kiosk_service_tgt = '/etc/systemd/system/kiosk.service'
-
-        webserver_service_src = base_path / 'resources' / 'webserver.service'
-        webserver_service_tgt = '/etc/systemd/system/webserver.service'
 
         startkiosk_script_src = base_path / 'resources' / 'startkiosk.sh'
         startkiosk_script_tgt = f'{target_scripts_dir}/startkiosk.sh'
@@ -91,6 +106,21 @@ class KioskOperation(OperationBase):
             mgr.run(f'chown pi:pi {startkiosk_script_tgt}', sudo=True)
             changed = True
 
+        # Loading HTML
+        style = configs.get('loading_style', 'spinner')
+        html_src = base_path / 'resources' / f'loading_{style}.html'
+        html_content = html_src.read_text(encoding='utf-8')
+        if style == 'text':
+            loading_text = configs.get('loading_text', 'System Starting...')
+            html_content = html_content.replace('{{LOADING_TEXT}}', loading_text)
+
+        target_html = f'{target_scripts_dir}/loading.html'
+        html_remote = mgr.read_file(target_html, sudo=True)
+        if html_content != html_remote:
+            mgr.write_file(target_html, html_content, sudo=True)
+            mgr.run(f'chown pi:pi {target_html}', sudo=True)
+            changed = True
+
         # Kiosk Service
         kiosk_content_local = kiosk_service_src.read_text(encoding='utf-8')
         kiosk_content_remote = mgr.read_file(kiosk_service_tgt, sudo=True)
@@ -98,15 +128,6 @@ class KioskOperation(OperationBase):
         if kiosk_content_local != kiosk_content_remote:
             mgr.put(str(kiosk_service_src), kiosk_service_tgt, sudo=True)
             mgr.systemd_enable('kiosk.service', servicePath=kiosk_service_tgt, sudo=True)
-            changed = True
-
-        # Webserver Service
-        webserver_content_local = webserver_service_src.read_text(encoding='utf-8')
-        webserver_content_remote = mgr.read_file(webserver_service_tgt, sudo=True)
-
-        if webserver_content_local != webserver_content_remote:
-            mgr.put(str(webserver_service_src), webserver_service_tgt, sudo=True)
-            mgr.systemd_enable('webserver.service', servicePath=webserver_service_tgt, sudo=True)
             changed = True
 
         return changed
@@ -128,7 +149,7 @@ class KioskOperation(OperationBase):
 
         try:
             changed |= self._install_packages(mgr)
-            changed |= self._setup_services(mgr)
+            changed |= self._setup_services(mgr, configs)
         except Exception as e:
             errors.append(f"Failed configuring Kiosk: {str(e)}")
 

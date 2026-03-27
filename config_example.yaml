@@ -13,3 +13,7 @@ bash_util:
     tools:
         - cdargs
         - aliases
+
+kiosk:
+  loading_style: "spinner" # Options: black, spinner, text
+  loading_text: "System Starting..." # Only used if loading_style is 'text'

@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html style="background-color: black; color: white; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;"><head>
+<meta charset="UTF-8">
+<title>Loading</title>
+<script>
+  const check = setInterval(() => {
+    fetch('http://localhost').then(r => { if(r.ok) { clearInterval(check); window.location.replace('http://localhost'); } }).catch(e => e);
+  }, 500);
+</script>
+</head><body><h2>{{LOADING_TEXT}}</h2></body></html>

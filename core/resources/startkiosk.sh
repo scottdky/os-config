@@ -7,7 +7,7 @@ if [[ -x "$DIMMER_SCRIPT" ]]; then
 fi
 
 # Launch Chromium, replacing the bash process
-exec /usr/bin/chromium-browser http://localhost:80 \
+exec /usr/bin/chromium-browser file:///home/pi/bin/scripts/loading.html \
     --kiosk \
     --start-fullscreen \
     --no-sandbox \

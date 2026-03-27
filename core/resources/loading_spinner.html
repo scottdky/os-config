@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html style="background-color: black; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh;">
+<head>
+<meta charset="UTF-8">
+<title>Loading</title>
+<style>
+  .spinner { width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+</style>
+<script>
+  const check = setInterval(() => {
+    fetch('http://localhost').then(r => { if(r.ok) { clearInterval(check); window.location.replace('http://localhost'); } }).catch(e => e);
+  }, 500);
+</script>
+</head><body><div class="spinner"></div></body></html>

@@ -1,6 +1,6 @@
 [Unit]
 Description=Kiosk Wayland Session
-After=multi-user.target graphical.target webserver.service
+After=multi-user.target graphical.target
 
 [Service]
 User=pi
