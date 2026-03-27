@@ -7,8 +7,7 @@ from pathlib import Path
 def test_mount_usb_operation(mock_manager):
     # Setup resources
     base_path = Path('core/resources')
-    base_path.mkdir(parents=True, exist_ok=True)
-    (base_path / '99-usb-automount.rules').write_text('udev_mount_rule', encoding='utf-8')
+    udev_rule_data = (base_path / '99-usb-automount.rules').read_text(encoding='utf-8')
 
     installed_pkgs = set()
     original_run = mock_manager.run
@@ -29,7 +28,7 @@ def test_mount_usb_operation(mock_manager):
     record = op.apply(mock_manager, {})
 
     assert record.changed is True
-    assert mock_manager.read_file("/etc/udev/rules.d/99-usb-automount.rules") == "udev_mount_rule"
+    assert mock_manager.read_file("/etc/udev/rules.d/99-usb-automount.rules") == udev_rule_data
 
     assert record.previousState['packagesInstalled'] is False
     assert record.currentState['packagesInstalled'] is True

@@ -1,5 +1,3 @@
-import pytest
-import os
 from pathlib import Path
 from core.readonly import ReadonlyOperation
 from lib.managers.base import CommandResult
@@ -15,13 +13,6 @@ def test_readonly_operation(mock_manager):
 
     Path(mock_manager.tmp_path, 'var/spool/cron').mkdir(parents=True, exist_ok=True)
 
-    # Setup local resources needed
-    base_path = Path('core/resources')
-    base_path.mkdir(parents=True, exist_ok=True)
-    (base_path / 'bash_prompt.py').write_text('prompt_script', encoding='utf-8')
-    (base_path / 'enable_ro_fs.py').write_text('ro_script', encoding='utf-8')
-    (base_path / 'enable-ro-fs.service').write_text('ro_service', encoding='utf-8')
-
     original_run = mock_manager.run
     installed_pkgs = set(['dphys-swapfile']) # It will see this and run swapoff
 
@@ -34,9 +25,6 @@ def test_readonly_operation(mock_manager):
 
         # Override test -L appropriately
         if command.startswith("test -L "):
-            path = command.split()[-1]
-            if path in mock_manager._resolve_path(''):
-                pass
             return CommandResult("", "", 1) # Return 1 (false) so it creates the symlink
 
         return original_run(command, sudo)
